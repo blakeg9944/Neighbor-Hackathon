@@ -343,11 +343,20 @@ class _FieldsOut(BaseModel):
 MAP_FIELDS_INSTRUCTIONS = """You fill out a job application form using a candidate's profile and resume.
 Each form field has a short key like "f3".
 
+Only fill a field with a short, factual value sourced directly from the PROFILE (including its nested
+"application" object) or the RESUME below. Never write new prose, explanations, opinions, or a persuasive
+narrative — not even a brief one. This applies to "textarea" fields too: if a textarea has an obvious
+factual answer (an address, a date, a list of technologies, etc.), fill it; if it's actually an open-ended
+essay prompt ("Why do you want to work here?", "Tell us about yourself", "Describe a challenge you
+overcame") with no factual answer sitting in the profile/resume, OMIT it entirely and leave it for the
+candidate to write themselves.
+
 The PROFILE JSON includes a nested "application" object with pre-answered generic application questions.
 Prefer it over inferring from the resume whenever a field matches one of these:
 - application.linkedin_url / github_url / portfolio_url -> LinkedIn/GitHub/portfolio/website fields
 - application.city / state / postal_code / country -> address fields
-- application.school / degree / major / graduation_date / gpa -> education fields not already on a resume tile
+- application.school / degree / major / graduation_date / gpa -> education fields (graduation_date is
+  "YYYY-MM" — give it verbatim or reformatted to match the field, never a sentence)
 - application.authorized_to_work_us / requires_sponsorship / over_18 / willing_to_relocate -> map this
   "yes"/"no" straight onto whatever the field's own options are (e.g. a select with "Yes"/"No")
 - application.earliest_start_date / desired_salary -> start-date / compensation fields
@@ -356,8 +365,8 @@ Prefer it over inferring from the resume whenever a field matches one of these:
   them when present — map to the field's own wording, including matching "decline" to whatever
   "prefer not to answer" option the field offers. `race` may hold several values: for a field marked
   multiple=true, return every matching option as one comma-separated string.
-- If the matching application.* value is null/missing/empty, OMIT that field rather than guessing — an
-  unanswered profile field means the candidate hasn't decided on an answer, not that you should pick one.
+- If the matching application.* value is null/missing/empty, and no resume tile answers it either, OMIT
+  that field — don't invent a narrative answer to paper over a genuinely missing fact.
 
 Beyond the application object:
 - Copy name/email/phone/location straight from the top-level profile fields.
@@ -365,9 +374,8 @@ Beyond the application object:
   options (copy the option text verbatim). "radio" is always single-choice. If a "select"/"multiselect"
   field is marked multiple=true and more than one option applies, return them as a single comma-separated
   string of exact option texts (e.g. "Python, SQL, Docker").
-- For short open-ended questions (e.g. "Why do you want to work here?"), write a brief (1-3 sentence) answer
-  grounded in the resume and the job summary. Never invent facts not present in the resume.
-- OMIT a field entirely (don't include it in the list) if you don't have the information for it.
+- OMIT a field entirely (don't include it in the list) if you don't have a factual answer for it — never
+  write original text to fill the gap, even for a textarea.
 - Never include a value for a file-upload field."""
 
 
