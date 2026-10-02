@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Resume Adapter",
+  "version": "1.0",
+  "description": "Sends the active tab URL to an external API.",
+  "permissions": [
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://api.yourwebsite.com/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
