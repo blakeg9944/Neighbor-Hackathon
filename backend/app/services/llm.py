@@ -6,6 +6,7 @@ so the rest of the app still works offline.
 """
 import json
 import os
+import re
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -20,7 +21,13 @@ CATEGORIES: tuple[str, ...] = ("education", "coursework", "skills", "experience"
 BUDGET: dict[str, int] = {"education": 2, "coursework": 1, "skills": 4, "experience": 4, "projects": 3, "other": 2}
 
 MODEL = os.getenv("OPENAI_MODEL") or "gpt-5.6-luna"
+# gpt-5 models default to medium reasoning (~3x slower on extract_tiles); "low" keeps quality, "none" is fastest.
+REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT") or "low"
 USE_STUBS = not os.getenv("OPENAI_API_KEY")
+
+if USE_STUBS:
+    print("\n" + "!" * 72 + "\n  llm.py: OPENAI_API_KEY is not set -> STUB MODE. Resume parsing returns FAKE tiles\n"
+          "  (written to the real bank) and every job gets a fake Acme summary.\n" + "!" * 72 + "\n")
 
 Category = Literal["education", "coursework", "skills", "experience", "projects", "other"]
 
@@ -50,6 +57,8 @@ def _parse(instructions: str, user_input: str, schema: type[BaseModel]) -> BaseM
     # Reasoning models (gpt-5*, o*) reject temperature; older chat models take a low one.
     if MODEL.startswith(("gpt-4", "gpt-3")):
         kwargs["temperature"] = 0.2
+    elif MODEL.startswith(("gpt-5", "o")):
+        kwargs["reasoning"] = {"effort": REASONING_EFFORT}
     res = _openai().responses.parse(
         model=MODEL, instructions=instructions, input=user_input, text_format=schema, **kwargs
     )
@@ -83,9 +92,11 @@ Tile text format (strict):
 Rules:
 - One tile per job, degree, project, award, etc. Keep each entry's bullets inside its tile.
 - Keep the original wording VERBATIM. Only clean up whitespace and normalize bullet characters to "• ".
-- If education lists courses, split them into ONE separate coursework tile:
-  "Relevant Coursework: Data Structures, Algorithms, ..."
-- Skills: one tile per skill line/group, e.g. "Languages: Python, TypeScript, SQL".
+- If education lists courses, move them into ONE separate coursework tile:
+  "Relevant Coursework: Data Structures, Algorithms, ..." and REMOVE them from the education tile
+  (keep other details like GPA in the education tile).
+- Skills: one tile per skill line/group, e.g. "Languages: Python, TypeScript, SQL". A skills tile is a
+  SINGLE line with no bullets. Keep a label only if the resume has one; never add labels like "Skills".
 - Awards, certifications, volunteering, leadership, interests, publications -> other.
 - Skip the name/contact header (email, phone, links); that comes from the profile.
 - Never invent content."""
@@ -96,7 +107,24 @@ def extract_tiles(resume_text: str) -> list[dict]:
     if USE_STUBS:
         return [dict(t) for t in _STUB_TILES]
     out = _parse(EXTRACT_INSTRUCTIONS, resume_text, _TilesOut)
-    return [{"category": t.category, "text": t.text.strip()} for t in out.tiles if t.text.strip()]
+    tiles = []
+    for t in out.tiles:
+        lines = [_clean_line(ln) for ln in t.text.split("\n")]
+        lines = [ln for ln in lines if ln]
+        if not lines:
+            continue
+        if t.category == "skills" and len(lines) > 1 and not any(ln.startswith("• ") for ln in lines):
+            tiles += [{"category": "skills", "text": ln} for ln in lines]  # one tile per skill line (§4.2)
+        else:
+            tiles.append({"category": t.category, "text": "\n".join(lines)})
+    return tiles
+
+
+def _clean_line(line: str) -> str:
+    """Collapse whitespace runs (PDF text is full of them) and normalize '-'/'*' bullets to '• '."""
+    line = re.sub(r"\s+", " ", line).strip()
+    line = re.sub(r" +([,;])", r"\1", line)  # "University , Provo" -> "University, Provo"
+    return re.sub(r"^[-*•●▪◦]\s*", "• ", line)
 
 
 # ---------------------------------------------------------------------------

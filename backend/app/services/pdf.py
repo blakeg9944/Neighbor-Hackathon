@@ -79,15 +79,20 @@ STYLES = {
 }
 
 
-def _tile_flowables(text: str) -> list:
+def _tile_flowables(text: str, category: str = "") -> list:
     """DESIGN_SPEC §4.2: line 1 bold heading; '• ' lines are bullets; other lines plain."""
     lines = [ln.rstrip() for ln in text.strip().split("\n") if ln.strip()]
     if not lines:
         return []
     label, sep, rest = lines[0].partition(": ")
+    if len(lines) == 1 and sep and category == "coursework" and "cours" in label.lower():
+        # "Relevant Coursework: ..." under a "RELEVANT COURSEWORK" header -> drop the repeated label
+        return [Paragraph(escape(rest), STYLES["body"])]
     if len(lines) == 1 and sep and len(label) <= 30:
         # "Languages: Python, SQL" -> bold label, normal list
         return [Paragraph(f"<b>{escape(label)}:</b> {escape(rest)}", STYLES["body"])]
+    if len(lines) == 1 and category == "skills":
+        return [Paragraph(escape(lines[0]), STYLES["body"])]  # unlabeled skill list: an all-bold line reads as a heading
     out = [Paragraph(escape(lines[0]), STYLES["heading"])]
     for line in lines[1:]:
         if line.lstrip().startswith("•"):
@@ -117,7 +122,7 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes:
         story.append(Paragraph(LABELS[cat].upper(), STYLES["section"]))
         story.append(HRFlowable(width="100%", thickness=0.6, color=colors.black, spaceBefore=1, spaceAfter=3))
         for text in texts:
-            story.extend(_tile_flowables(text))
+            story.extend(_tile_flowables(text, cat))
         story.append(Spacer(1, 2))
 
     doc.build(story)
