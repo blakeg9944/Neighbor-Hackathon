@@ -1,9 +1,17 @@
 """
-PDF in (resume upload -> text) and PDF out (tiles -> resume).
-STUB: pdf_to_text returns sample text; render_resume writes a bare-bones single-page PDF
-by hand (no ReportLab yet) so the /pdfs route can upload and serve something real.
+PDF in (resume upload -> text, pypdf) and PDF out (tiles -> resume, ReportLab).
 Signatures are fixed (DESIGN_SPEC §7).
 """
+import io
+from xml.sax.saxutils import escape
+
+from pypdf import PdfReader
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer
 
 from .llm import CATEGORIES
 
@@ -16,6 +24,7 @@ LABELS: dict[str, str] = {
     "other": "Other",
 }
 
+# Handy for testing extract_tiles / the parse route without a real PDF.
 SAMPLE_RESUME_TEXT = """Jordan Lee
 jordan.lee@example.com | (555) 123-4567 | Provo, UT | github.com/jordanlee
 
@@ -50,60 +59,66 @@ Volunteer Math Tutor, Lincoln High School (2022 – Present)
 
 
 def pdf_to_text(data: bytes) -> str:
-    return SAMPLE_RESUME_TEXT
+    """Join the text of every page. Returns "" for scanned/image-only PDFs."""
+    reader = PdfReader(io.BytesIO(data))
+    return "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+
+
+# --- rendering -------------------------------------------------------------
+
+_BASE = dict(fontName="Helvetica", fontSize=10, leading=12.5, textColor=colors.black)
+STYLES = {
+    "name": ParagraphStyle("name", **{**_BASE, "fontName": "Helvetica-Bold", "fontSize": 18, "leading": 22},
+                           alignment=TA_CENTER),
+    "contact": ParagraphStyle("contact", **{**_BASE, "fontSize": 9.5}, alignment=TA_CENTER, spaceAfter=6),
+    "section": ParagraphStyle("section", **{**_BASE, "fontName": "Helvetica-Bold", "fontSize": 11, "leading": 14},
+                              spaceBefore=6),
+    "heading": ParagraphStyle("heading", **{**_BASE, "fontName": "Helvetica-Bold"}, spaceBefore=3),
+    "body": ParagraphStyle("body", **_BASE),
+    "bullet": ParagraphStyle("bullet", **_BASE, leftIndent=14, bulletIndent=4),
+}
+
+
+def _tile_flowables(text: str) -> list:
+    """DESIGN_SPEC §4.2: line 1 bold heading; '• ' lines are bullets; other lines plain."""
+    lines = [ln.rstrip() for ln in text.strip().split("\n") if ln.strip()]
+    if not lines:
+        return []
+    label, sep, rest = lines[0].partition(": ")
+    if len(lines) == 1 and sep and len(label) <= 30:
+        # "Languages: Python, SQL" -> bold label, normal list
+        return [Paragraph(f"<b>{escape(label)}:</b> {escape(rest)}", STYLES["body"])]
+    out = [Paragraph(escape(lines[0]), STYLES["heading"])]
+    for line in lines[1:]:
+        if line.lstrip().startswith("•"):
+            out.append(Paragraph(escape(line.lstrip()[1:].strip()), STYLES["bullet"], bulletText="•"))
+        else:
+            out.append(Paragraph(escape(line), STYLES["body"]))
+    return [KeepTogether(out)]
 
 
 def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes:
-    """sections: category -> ordered tile texts. Returns PDF bytes (Letter, one page)."""
+    """sections: category -> ordered tile texts. Returns PDF bytes (Letter, ~0.6in margins)."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.6 * inch, rightMargin=0.6 * inch,
+                            topMargin=0.5 * inch, bottomMargin=0.5 * inch,
+                            title=profile.get("full_name") or "Resume")
+
     contact = [profile.get("email"), profile.get("phone"), profile.get("location"), *(profile.get("links") or [])]
-    # (font, size, x, text)
-    lines: list[tuple[str, int, int, str]] = [
-        ("F2", 18, 43, profile.get("full_name") or "Your Name"),
-        ("F1", 10, 43, " | ".join(c for c in contact if c)),
-    ]
+    story: list = [Paragraph(escape(profile.get("full_name") or "Your Name"), STYLES["name"])]
+    contact_line = "  |  ".join(escape(str(c)) for c in contact if c)
+    if contact_line:
+        story.append(Paragraph(contact_line, STYLES["contact"]))
+
     for cat in CATEGORIES:
-        texts = sections.get(cat) or []
+        texts = [t for t in (sections.get(cat) or []) if t and t.strip()]
         if not texts:
             continue
-        lines.append(("F2", 12, 43, LABELS[cat].upper()))
+        story.append(Paragraph(LABELS[cat].upper(), STYLES["section"]))
+        story.append(HRFlowable(width="100%", thickness=0.6, color=colors.black, spaceBefore=1, spaceAfter=3))
         for text in texts:
-            heading, *body = text.split("\n")
-            lines.append(("F2", 10, 43, heading))
-            for line in body:
-                lines.append(("F1", 10, 55 if line.startswith("• ") else 43, line))
-    return _build_pdf(lines)
+            story.extend(_tile_flowables(text))
+        story.append(Spacer(1, 2))
 
-
-def _escape(s: str) -> bytes:
-    # WinAnsi covers the bullet and en dash used in tiles
-    return s.encode("cp1252", "replace").replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
-
-
-def _build_pdf(lines: list[tuple[str, int, int, str]]) -> bytes:
-    stream = b""
-    y = 792 - 50
-    for font, size, x, text in lines:
-        y -= size + 4
-        if y < 40:
-            break  # stub: no wrapping or second page
-        stream += b"BT /%s %d Tf %d %d Td (%s) Tj ET\n" % (font.encode(), size, x, y, _escape(text[:110]))
-
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
-        b"<< /Length %d >>\nstream\n%sendstream" % (len(stream), stream),
-    ]
-    out = b"%PDF-1.4\n"
-    offsets = []
-    for i, obj in enumerate(objects, 1):
-        offsets.append(len(out))
-        out += b"%d 0 obj\n%s\nendobj\n" % (i, obj)
-    xref = len(out)
-    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
-    out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
-    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
-    return out
+    doc.build(story)
+    return buf.getvalue()

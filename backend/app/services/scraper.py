@@ -1,4 +1,7 @@
 # app/services/scraper.py
+import json
+import re
+
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import HTTPException
@@ -36,3 +39,57 @@ class ScraperService:
             raise HTTPException(status_code=400, detail=f"Network error while scraping URL: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Parsing error: {str(e)}")
+
+
+# --- Sync full-text fetch used by POST /api/jobs (DESIGN_SPEC §7 fetch_job_text) ---
+MAX_CHARS = 15_000
+
+
+def _clean(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _find_job_posting(data) -> dict | None:
+    """Search JSON-LD (dict, list, or @graph) for a JobPosting object."""
+    if isinstance(data, list):
+        for item in data:
+            if found := _find_job_posting(item):
+                return found
+    elif isinstance(data, dict):
+        types = data.get("@type")
+        if types == "JobPosting" or (isinstance(types, list) and "JobPosting" in types):
+            return data
+        if "@graph" in data:
+            return _find_job_posting(data["@graph"])
+    return None
+
+
+def _from_json_ld(soup: BeautifulSoup) -> str | None:
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            posting = _find_job_posting(json.loads(tag.string or ""))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not posting:
+            continue
+        org = posting.get("hiringOrganization") or {}
+        company = org.get("name") if isinstance(org, dict) else str(org)
+        description = BeautifulSoup(posting.get("description") or "", "html.parser").get_text(" ")
+        parts = [posting.get("title"), company, description]
+        return _clean("\n".join(p for p in parts if p))
+    return None
+
+
+def fetch_job_text(url: str) -> str:
+    """Sync fetch -> JSON-LD JobPosting if present, else visible page text. Raises on HTTP errors."""
+    res = httpx.get(url, headers=HEADERS, follow_redirects=True, timeout=15.0)
+    res.raise_for_status()
+    soup = BeautifulSoup(res.text, "html.parser")
+
+    text = _from_json_ld(soup)
+    if not text or len(text) < 500:
+        for el in soup(["script", "style", "noscript", "nav", "header", "footer", "svg"]):
+            el.decompose()
+        page_text = _clean(soup.get_text(" "))
+        text = page_text if len(page_text) > len(text or "") else text
+    return (text or "")[:MAX_CHARS]
