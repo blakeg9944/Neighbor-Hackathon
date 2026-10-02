@@ -11,6 +11,12 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "host_permissions": [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://*.amazonaws.com/*",
+    "https://*.trimd.com/*"
+  ],
   "action": {
     "default_popup": "popup.html"
   }
