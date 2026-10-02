@@ -37,7 +37,7 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | X button | **Review page:** X removes the tile from *this* resume only and moves it to the Unused sidebar. **Bank page:** X **permanently deletes** the tile from the bank. |
 | Resume header | Name, email, phone, location and links come from the **profile** (editable on the Bank page), not from tiles. |
 | Hosting | Demo runs on **localhost**. AWS *(stretch)*. |
-| Job matching | **In scope (added):** a **fit score** per job (cosine similarity of the user's whole-bank embedding vs the job's embedding, via the existing `job_fit`/`match_jobs` RPCs) and **recommended jobs** from the global pool. Embeddings use `text-embedding-3-small`. Fit is `null` until both sides are embedded (or with no OpenAI key). |
+| Job matching | **In scope (added):** a **fit score** per job (cosine similarity of the user's whole-bank embedding vs the job's embedding of its **clean summary** (title, company, summary, bullets; not the raw page), via the existing `job_fit`/`match_jobs` RPCs, then rescaled from the raw 0.20–0.55 range onto 0–1 by `job_service.calibrate_fit`) and **recommended jobs** from the global pool. Embeddings use `text-embedding-3-small`. Fit is `null` until both sides are embedded (or with no OpenAI key). |
 | Out of scope | RAG / per-tile retrieval. |
 
 ---
@@ -248,7 +248,7 @@ interface ResolvedLayout {               // read form
 interface Job {                          // DB: jobs (+ saved_jobs.created_at as created_at)
   id: string; url: string; title: string | null; company: string | null;
   summary: string | null; bullets: string[]; created_at: string;
-  fit: number | null;                    // resume-vs-job similarity (~0..1); null until both are embedded
+  fit: number | null;                    // calibrated resume-vs-job match 0..1 (show as %); null until both are embedded
 }
 interface JobListItem extends Job {
   pdf_count: number; latest_pdf_at: string | null;
@@ -281,7 +281,7 @@ interface JobDetail extends Job {
 | `POST /api/jobs/{id}/autoselect` | – | `JobDetail` | **(added)** re-run `llm.select_tiles` against the current bank and overwrite the saved layout. Review page **"Re-pick tiles"** button. 400 `EMPTY_BANK` if the bank is empty. |
 | `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits |
 | `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF, uploads, inserts `generated_resumes` row |
-| `GET /api/jobs/recommended?limit=10&include_saved=false` | – | `Job[]` | **(added)** global-pool jobs most similar to the user's whole-resume embedding, ranked by `fit` (best first). Excludes jobs already on the dashboard unless `include_saved=true`. `limit` 1–50. `created_at` = when the job entered the pool. Embeds the profile on the fly if it was never embedded; empty with an empty bank or no OpenAI key. |
+| `GET /api/jobs/recommended?limit=10&offset=0&include_saved=false` | – | `Job[]` | **(added)** global-pool jobs most similar to the user's whole-resume embedding, ranked by `fit` (best first). Excludes jobs already on the dashboard unless `include_saved=true`. `limit` 1–50; page with `offset` (ask for `limit + 1` to know if there's a next page). `created_at` = when the job entered the pool. Embeds the profile on the fly if it was never embedded; empty with an empty bank or no OpenAI key. |
 | `DELETE /api/jobs/{id}` | – | `{ok: true}` | removes the user's `saved_jobs` row |
 
 ### 6.3 `POST /api/jobs` flow
@@ -346,6 +346,7 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 | `/login` | "Continue with Google" button only. After login go to `?next=` (default `/`). | public |
 | `/` | **Dashboard**: URL input ("Tailor a resume") + grid of job cards | required |
 | `/bank` | **Resume Bank**: upload/paste resume, tile list, add-tile form, profile/contact form | required |
+| `/opportunities` | **Job Opportunities** *(added)*: the 10 global-pool jobs closest to the user's bank (`GET /api/jobs/recommended`), dashboard-style table with fit bars; a row opens the summary, and "Tailor resume" goes to `/generate?url=`. | required |
 | `/generate?url=` | **Generate**: if `url` is present, auto-start `POST /api/jobs`; shows progress, the paste fallback, and errors | required |
 | `/jobs/:id/review` | **Review/Edit**: 6 category sections + right "Unused" sidebar, drag and drop, Generate PDF, PDF preview + download | required |
 

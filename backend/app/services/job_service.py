@@ -10,15 +10,25 @@ from .scraper import fetch_job_text
 
 MIN_JOB_TEXT = 500  # §6.3: less scraped text than this counts as a failed fetch
 
+# Raw cosine similarity between OpenAI embeddings sits in ~0.20 (unrelated) .. ~0.55 (strong match),
+# measured on our job pool. `fit` is rescaled onto 0..1 between these anchors so it reads as a percentage.
+FIT_FLOOR, FIT_CEIL = 0.20, 0.55
+
+
+def calibrate_fit(raw: float | None) -> float | None:
+    if raw is None:
+        return None
+    return round(min(1.0, max(0.0, (raw - FIT_FLOOR) / (FIT_CEIL - FIT_FLOOR))), 3)
+
 
 # --- output shapes ----------------------------------------------------------
 
 def job_out(job: dict, fit: float | None = None) -> dict:
-    """jobs row (+ saved_at) -> Job. created_at is when the user saved it (§6.1)."""
+    """jobs row (+ saved_at) -> Job. created_at is when the user saved it (§6.1). `fit` is the raw cosine."""
     return {
         "id": job["id"], "url": job.get("url") or "", "title": job.get("title"), "company": job.get("company"),
         "summary": job.get("summary"), "bullets": job.get("bullets") or [],
-        "created_at": job.get("saved_at") or job["created_at"], "fit": fit,
+        "created_at": job.get("saved_at") or job["created_at"], "fit": calibrate_fit(fit),
     }
 
 
@@ -42,9 +52,11 @@ def _get_saved(user_id: str, job_id: str) -> dict:
     return saved
 
 
-def _embed_job(job: dict, text: str) -> None:
+def embed_job(job: dict) -> None:
+    """Embed the clean summary only (title, company, summary, bullets). The raw scraped page is mostly
+    site navigation/boilerplate shared by every posting, which pushes all fit scores together."""
     try:
-        parts = [job.get("title"), job.get("company"), job.get("summary"), *(job.get("bullets") or []), text]
+        parts = [job.get("title"), job.get("company"), job.get("summary"), *(job.get("bullets") or [])]
         vec = llm.embed("\n".join(p for p in parts if p))
         if vec:
             jobs.set_embedding(job["id"], vec)
@@ -124,7 +136,7 @@ def create_job(user_id: str, url: str, description: str | None = None) -> dict:
             job = jobs.update(existing["id"], description=text, **info)
         else:
             job = jobs.create(user_id, text, url=url, **info)
-        _embed_job(job, text)
+        embed_job(job)
 
     # 4-5. LLM picks tiles, save the card + validated layout.
     _select_and_save(user_id, job, text, tiles)
@@ -160,14 +172,15 @@ def list_jobs(user_id: str) -> list[dict]:
     ]
 
 
-def recommended_jobs(user_id: str, limit: int = 10, include_saved: bool = False) -> list[dict]:
-    """Global-pool jobs most similar to the user's whole-resume embedding, best fit first.
+def recommended_jobs(user_id: str, limit: int = 10, include_saved: bool = False, offset: int = 0) -> list[dict]:
+    """Global-pool jobs most similar to the user's whole-resume embedding, best fit first, paged by offset.
     Excludes jobs already on the dashboard unless include_saved. Empty with no bank / no OpenAI key."""
     if not profiles.has_embedding(user_id):
         refresh_profile_embedding(user_id)  # bank predates embeddings or the background task failed
     saved_ids = set() if include_saved else {j["id"] for j in jobs.list_saved(user_id)}
-    matches = [m for m in jobs.match_for_user(user_id, limit=limit + len(saved_ids)) if m["id"] not in saved_ids]
-    matches = matches[:limit]
+    # The RPC has no offset, so fetch enough rows to cover skipped pages + saved jobs, then slice.
+    pool = jobs.match_for_user(user_id, limit=offset + limit + len(saved_ids))
+    matches = [m for m in pool if m["id"] not in saved_ids][offset:offset + limit]
     by_id = {j["id"]: j for j in jobs.get_many([m["id"] for m in matches])}
     return [job_out(by_id[m["id"]], m["fit"]) for m in matches if m["id"] in by_id]
 
@@ -189,7 +202,7 @@ def generate_pdf(user_id: str, job_id: str, layout: dict) -> dict:
     path = storage.upload(storage.RESUMES, f"{user_id}/{job_id}/{gen_id}.pdf", pdf_bytes)
     row = generated_resumes.create(
         user_id, layout, id=gen_id, job_id=job_id, title=saved.get("title"), storage_path=path,
-        match_score=jobs.fit(user_id, job_id),
+        match_score=calibrate_fit(jobs.fit(user_id, job_id)),
     )
     return pdf_out(row)
 

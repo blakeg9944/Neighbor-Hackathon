@@ -5,6 +5,7 @@ import Bank from "./pages/Bank";
 import Dashboard from "./pages/Dashboard";
 import Generate from "./pages/Generate";
 import Login from "./pages/Login";
+import Opportunities from "./pages/Opportunities";
 import Review from "./pages/Review";
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/bank" element={<Bank />} />
+        <Route path="/opportunities" element={<Opportunities />} />
         <Route path="/generate" element={<Generate />} />
         <Route path="/jobs/:id/review" element={<Review />} />
       </Route>

@@ -3,7 +3,7 @@
 import * as mock from "./mock";
 import { api } from "./supabase";
 import type {
-  Category, GeneratedPdf, JobDetail, JobListItem, Layout, Profile, ProfileUpdate, Tile,
+  Category, GeneratedPdf, Job, JobDetail, JobListItem, Layout, Profile, ProfileUpdate, Tile,
 } from "./types";
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === "true";
@@ -30,6 +30,8 @@ const real = {
   createJob: (j: { url: string; description?: string }) => api<JobDetail>("/api/jobs", json("POST", j)),
   createJobFromUrl: (j: { url: string; description?: string }) => api<JobDetail>("/api/url", json("POST", j)),
   listJobs: () => api<JobListItem[]>("/api/jobs"),
+  recommendedJobs: (limit = 10, offset = 0) =>
+    api<Job[]>(`/api/jobs/recommended?limit=${limit}&offset=${offset}`),
   getJob: (id: string) => api<JobDetail>(`/api/jobs/${id}`),
   saveLayout: (id: string, layout: Layout) => api<{ ok: true }>(`/api/jobs/${id}/layout`, json("PUT", layout)),
   autoselect: (id: string) => api<JobDetail>(`/api/jobs/${id}/autoselect`, { method: "POST" }),

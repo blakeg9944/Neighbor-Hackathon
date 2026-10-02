@@ -7,11 +7,13 @@ import { IconButton, MonoLabel } from "./ui";
 const NAV = [
   { to: "/", label: "Dashboard", icon: "▦", end: true },
   { to: "/bank", label: "Resume Bank", icon: "☰", end: false },
+  { to: "/opportunities", label: "Job Opportunities", icon: "◎", end: false },
 ];
 
 const titleFor = (path: string) =>
   path === "/" ? "Dashboard"
   : path.startsWith("/bank") ? "Resume Bank"
+  : path.startsWith("/opportunities") ? "Job Opportunities"
   : path.startsWith("/generate") ? "New Resume"
   : path.includes("/review") ? "Review"
   : "";
