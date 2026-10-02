@@ -43,7 +43,7 @@ export default function Opportunities() {
       <Band className="flex-none">
         <PageTitle
           title="Job opportunities."
-          sub="The postings closest to your Resume Bank, ranked by how well your whole bank matches each job. Tailor a resume to any of them in one click."
+          sub="The postings closest to Your Resume, ranked by how well your whole resume matches each job. Tailor a resume to any of them in one click."
         />
       </Band>
 
@@ -68,7 +68,7 @@ export default function Opportunities() {
         <div className="px-5 py-12 text-center text-ink2 lg:px-7">
           No new opportunities yet. Add your resume to the{" "}
           <Link to="/bank" className="text-accent hover:underline">
-            Resume Bank
+            Your Resume
           </Link>{" "}
           so we can match you, or check back once more jobs are in the pool.
         </div>

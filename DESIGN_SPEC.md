@@ -352,7 +352,7 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 |---|---|---|
 | `/login` | "Continue with Google" button only. After login go to `?next=` (default `/`). | public |
 | `/` | **Dashboard**: URL input ("Tailor a resume") + grid of job cards | required |
-| `/bank` | **Resume Bank**: upload/paste resume, tile list, add-tile form, profile/contact form | required |
+| `/bank` | **Your Resume** (UI name for the resume bank; code and this spec still say "bank"): upload/paste resume, tile list, add-tile form, profile/contact form | required |
 | `/opportunities` | **Job Opportunities** *(added)*: the 10 global-pool jobs closest to the user's bank (`GET /api/jobs/recommended`), dashboard-style table with fit bars; a row opens the summary, and "Tailor resume" goes to `/generate?url=`. | required |
 | `/generate?url=` | **Generate**: if `url` is present, auto-start `POST /api/jobs`; shows progress, the paste fallback, and errors | required |
 | `/jobs/:id/review` | **Review/Edit**: 6 category sections + right "Unused" sidebar, drag and drop, Generate PDF, PDF preview + download | required |

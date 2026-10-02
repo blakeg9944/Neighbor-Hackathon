@@ -38,7 +38,7 @@ export default function Dashboard() {
       <Band>
         <PageTitle
           title="Tailor a resume."
-          sub="Paste a job link, or click Make a Resume in the Chrome extension. We pick the most relevant entries from your bank, then you fine-tune the order."
+          sub="Paste a job link, or click Make a Resume in the Chrome extension. We pick the most relevant entries from Your Resume, then you fine-tune the order."
         />
         <UrlForm onSubmit={(url) => navigate(`/generate?url=${encodeURIComponent(url)}`)} />
       </Band>
@@ -70,7 +70,7 @@ export default function Dashboard() {
             <>
               No resumes yet. Fill in your{" "}
               <Link to="/bank" className="text-accent hover:underline">
-                Resume Bank
+                Your Resume
               </Link>
               , then paste a job link above.
             </>

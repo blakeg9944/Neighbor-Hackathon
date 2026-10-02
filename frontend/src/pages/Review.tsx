@@ -239,7 +239,7 @@ export default function Review() {
           <Button
             onClick={repick}
             disabled={repicking}
-            title="Pick entries again from your current resume bank (replaces this layout)"
+            title="Pick entries again from Your Resume (replaces this layout)"
           >
             {repicking && <Spinner />} Re-pick
           </Button>
@@ -376,7 +376,7 @@ function SortableRow({
               onSave={(text) => editing.onSave(tile, text)}
               onCancel={editing.onCancel}
               saveLabel="Apply to this resume"
-              note="Only changes this resume; your bank entry stays the same."
+              note="Only changes this tailored resume; the entry in Your Resume stays the same."
             />
           </div>
         </div>
@@ -434,7 +434,7 @@ function Row({
               <MonoLabel className="!text-accent">Edited for this resume</MonoLabel>
               {onRevert && (
                 <button onPointerDown={stop} onClick={onRevert} className="text-xs text-muted underline hover:text-ink">
-                  Revert to bank
+                  Revert to original
                 </button>
               )}
             </span>

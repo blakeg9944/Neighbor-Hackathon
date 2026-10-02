@@ -214,7 +214,7 @@ export const mockApi = {
       return toDetail(existing);
     }
     await delay(2500);
-    if (!state.tiles.length) throw new ApiError(400, { code: "EMPTY_BANK", message: "Your resume bank is empty." });
+    if (!state.tiles.length) throw new ApiError(400, { code: "EMPTY_BANK", message: "Your Resume is empty." });
     if (j.url.includes("fail") && !j.description)
       throw new ApiError(422, { code: "FETCH_FAILED", message: "Couldn't read that page." });
     const { title, company } = guessJob(j.url);
@@ -260,7 +260,7 @@ export const mockApi = {
   async autoselect(id: string) {
     await delay(1500);
     const job = findJob(id);
-    if (!state.tiles.length) throw new ApiError(400, { code: "EMPTY_BANK", message: "Your resume bank is empty." });
+    if (!state.tiles.length) throw new ApiError(400, { code: "EMPTY_BANK", message: "Your Resume is empty." });
     job.layout = autoSelect(`${job.summary ?? ""} ${job.bullets.join(" ")}`);
     save();
     return toDetail(job);

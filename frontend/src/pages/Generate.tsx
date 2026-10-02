@@ -58,7 +58,7 @@ export default function Generate() {
         <PageTitle
           kicker={fromExtension ? "From the Chrome extension" : "New resume"}
           title="Tailor a resume"
-          sub="Paste a job posting link and we'll pick the most relevant entries from your bank."
+          sub="Paste a job posting link and we'll pick the most relevant entries from Your Resume."
         />
         <UrlForm initial={url} disabled={status === "loading"} onSubmit={(u) => run(u)} />
       </Band>
@@ -108,7 +108,7 @@ export default function Generate() {
 
       {status === "empty_bank" && (
         <div className="border-b border-line bg-accent-bg px-5 py-4 lg:px-7">
-          Your resume bank is empty.{" "}
+          Your Resume is empty.{" "}
           <Link to="/bank" className="font-medium text-accent hover:underline">
             Upload your resume first
           </Link>

@@ -40,7 +40,7 @@ export default function Bank() {
   };
 
   const onDelete = async (tile: Tile) => {
-    if (!confirm("Delete this entry from your resume bank? This removes it from every resume.")) return;
+    if (!confirm("Delete this entry from Your Resume? This removes it from every tailored resume.")) return;
     setTiles((ts) => ts!.filter((t) => t.id !== tile.id));
     try {
       await Api.deleteTile(tile.id);
@@ -85,7 +85,7 @@ export default function Bank() {
                         initial={t.text}
                         onSave={(text) => onEditSave(t, text)}
                         onCancel={() => setEditingId(null)}
-                        note="Saves to your bank permanently."
+                        note="Saves to Your Resume permanently."
                       />
                     ) : (
                       <TileText text={t.text} />
@@ -96,7 +96,7 @@ export default function Bank() {
                     <IconButton onClick={() => setEditingId(t.id)} title="Edit entry" disabled={editingId === t.id}>
                       ✎
                     </IconButton>
-                    <IconButton onClick={() => onDelete(t)} title="Delete from bank">
+                    <IconButton onClick={() => onDelete(t)} title="Delete from Your Resume">
                       ✕
                     </IconButton>
                   </div>
@@ -125,7 +125,7 @@ function ImportBand({ existingCount, onParsed }: { existingCount: number; onPars
     // The backend replaces the whole bank on import, including hand-added entries.
     if (
       existingCount > 0 &&
-      !confirm(`Importing replaces your whole bank (${existingCount} entries, including ones you added by hand). Continue?`)
+      !confirm(`Importing replaces everything in Your Resume (${existingCount} entries, including ones you added by hand). Continue?`)
     )
       return;
     setBusy(true);
@@ -162,7 +162,7 @@ function ImportBand({ existingCount, onParsed }: { existingCount: number; onPars
         onDrop={onDrop}
       >
         <PageTitle
-          title="Resume Bank"
+          title="Your Resume"
           sub="Every entry you might put on a resume. Add more than fits on one page; we pick the best ones for each job."
         />
         <div className="mt-4 flex flex-wrap items-center gap-2">

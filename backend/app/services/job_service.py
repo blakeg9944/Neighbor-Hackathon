@@ -120,7 +120,7 @@ def create_job(user_id: str, url: str, description: str | None = None) -> dict:
     # 2. Need tiles to select from.
     tiles = list_tiles(user_id)
     if not tiles:
-        raise AppError(400, "EMPTY_BANK", "Your resume bank is empty. Add your resume first.")
+        raise AppError(400, "EMPTY_BANK", "Your Resume is empty. Add your resume first.")
 
     # 3. Get the job (reuse the global row if it's already summarized).
     if existing and existing.get("summary"):
@@ -153,7 +153,7 @@ def autoselect(user_id: str, job_id: str) -> dict:
     saved = _get_saved(user_id, job_id)
     tiles = list_tiles(user_id)
     if not tiles:
-        raise AppError(400, "EMPTY_BANK", "Your resume bank is empty. Add your resume first.")
+        raise AppError(400, "EMPTY_BANK", "Your Resume is empty. Add your resume first.")
     _select_and_save(user_id, saved, saved.get("description") or "", tiles)
     return _detail(user_id, jobs.get_saved(user_id, job_id))
 
