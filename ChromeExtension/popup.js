@@ -1,3 +1,5 @@
+import { CONFIG } from './config.js';
+
 const SITE_URL = "http://localhost:5173";
 const makeResumeButton = document.getElementById("sendBtn");
 const statusDiv = document.getElementById("status");
@@ -31,7 +33,8 @@ chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
 makeResumeButton.addEventListener("click", () => {
   if (!activeUrl) return;
   const query = new URLSearchParams({ url: activeUrl, source: "extension" });
-  chrome.tabs.create({ url: `${SITE_URL}/generate?${query.toString()}` });
+  // chrome.tabs.create({ url: `${SITE_URL}/generate?${query.toString()}` });
+  chrome.tabs.create({ url: `${CONFIG.frontendUrl}/generate?${query.toString()}` });
   window.close();
 });
 
