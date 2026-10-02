@@ -5,8 +5,8 @@ const ENVIRONMENTS = {
     backendUrl: "http://127.0.0.1:8000"
   },
   production: {
-    frontendUrl: "https://www.trimdcv.com", // S3/CloudFront static site
-    backendUrl: "https://api.trimdcv.com"   // FastAPI on EC2 (Caddy); www.trimdcv.com/api/* is S3 and returns index.html
+    frontendUrl: "https://trimdcv.com", // S3/CloudFront static site — no www: that's the origin users are actually signed into
+    backendUrl: "https://api.trimdcv.com"   // FastAPI on EC2 (Caddy); trimdcv.com/api/* is S3 and returns index.html
   }
 };
 
