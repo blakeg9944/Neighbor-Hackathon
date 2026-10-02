@@ -1,0 +1,4 @@
+# Production: /etc/caddy/Caddyfile on the Lightsail server. Caddy gets the HTTPS cert automatically.
+api.trimdcv.com {
+	reverse_proxy localhost:8000
+}

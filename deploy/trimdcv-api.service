@@ -1,0 +1,15 @@
+# /etc/systemd/system/trimdcv-api.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now trimdcv-api
+[Unit]
+Description=Trimd CV API (FastAPI/uvicorn)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Neighbor-Hackathon/backend
+ExecStart=/home/ubuntu/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

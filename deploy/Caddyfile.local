@@ -1,0 +1,17 @@
+# Local rehearsal of the production setup (no AWS, no sudo, plain HTTP).
+#   localhost:5173      -> built frontend (stands in for Amplify, incl. the SPA rewrite)
+#   api.localhost:8081  -> uvicorn on :8000 (stands in for api.trimdcv.com)
+# Run from the repo root: caddy run --config deploy/Caddyfile.local
+{
+	admin off
+}
+
+http://localhost:5173 {
+	root * frontend/dist
+	try_files {path} /index.html
+	file_server
+}
+
+http://api.localhost:8081 {
+	reverse_proxy localhost:8000
+}
