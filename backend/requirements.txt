@@ -3,3 +3,5 @@ supabase
 python-dotenv
 pydantic
 uvicorn
+httpx 
+beautifulsoup4
