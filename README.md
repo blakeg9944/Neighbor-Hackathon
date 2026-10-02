@@ -2,7 +2,7 @@
 
 Build a bank of resume "tiles" once, then generate a tailored, one-page PDF resume for any job posting, from the website or with one click in the Chrome extension. The extension can also fill in job application forms for you.
 
-Live at **https://www.trimdcv.com**. (Older code and docs may still say "Resume Adapter", the project's original name.)
+Live at **https://trimdcv.com**. (Older code and docs may still say "Resume Adapter", the project's original name.)
 
 > **Start here: [DESIGN_SPEC.md](DESIGN_SPEC.md)** has the full plan: architecture, DB schema, API contract, LLM contracts, page behavior, division of labor, and timeline.
 > Claude Code loads it automatically through [CLAUDE.md](CLAUDE.md).
@@ -100,7 +100,7 @@ npm run dev                     # http://localhost:5173  (use localhost, not 127
 Set `VITE_USE_MOCKS=true` to work without the backend.
 
 ### Chrome extension
-1. In `ChromeExtension/config.js`, set `CURRENT_ENV` to `"local"` to use your local website and backend. It's `"production"` (www.trimdcv.com) by default.
+1. In `ChromeExtension/config.js`, set `CURRENT_ENV` to `"local"` to use your local website and backend. It's `"production"` (trimdcv.com) by default.
 2. Go to `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `ChromeExtension/` folder. Click the reload icon there after edits.
 3. Sign in to the website once. The extension uses that session, and you'll stay signed in.
 4. On a job posting, click the extension icon and then **Make a Resume**. On an application form, use **Fill form** and **Download resume**.
@@ -108,7 +108,7 @@ Set `VITE_USE_MOCKS=true` to work without the backend.
 ## Deployment
 | What | Where | How it deploys |
 |---|---|---|
-| Frontend | https://www.trimdcv.com (AWS Amplify, [amplify.yml](amplify.yml)) | Amplify builds the `prod` branch |
+| Frontend | https://trimdcv.com (AWS Amplify, [amplify.yml](amplify.yml)) | Amplify builds the `prod` branch |
 | Backend | https://api.trimdcv.com (Lightsail, Caddy, uvicorn) | GitHub Action on push to `prod` |
 
 To release, push `main` to `prod`:
