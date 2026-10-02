@@ -12,7 +12,7 @@ document.getElementById('sendBtn').addEventListener('click', async () => {
     }
 
     // 2. Post the URL to your external API endpoint
-    const response = await fetch("https://api.yourwebsite.com/endpoint", {
+    const response = await fetch("https://localhost:8000/endpoint", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
