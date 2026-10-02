@@ -26,6 +26,8 @@ export default function Layout() {
   const [panelOpen, setPanelOpen] = usePanel();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const panelAllowed = pathname !== "/"; // no right-hand panel on the home page
+  const showPanel = panelAllowed && panelOpen;
   const initials = (user?.name ?? user?.email ?? "?")
     .split(/[\s@.]+/)
     .filter(Boolean)
@@ -92,7 +94,7 @@ export default function Layout() {
               ))}
             </nav>
             <div className="ml-auto flex items-center gap-2">
-              <button
+              {panelAllowed && <button
                 onClick={() => setPanelOpen(!panelOpen)}
                 className={`hidden h-8 items-center gap-1.5 border px-2.5 lg:flex ${
                   panelOpen ? "border-accent-line bg-accent-bg text-accent" : "border-line text-ink2 hover:border-line2 hover:text-ink"
@@ -100,7 +102,7 @@ export default function Layout() {
                 title="Toggle side panel"
               >
                 ◨ <MonoLabel className="!text-inherit">Panel</MonoLabel>
-              </button>
+              </button>}
             </div>
           </header>
           <Outlet />
@@ -108,7 +110,7 @@ export default function Layout() {
       </main>
 
       {/* ---------- optional right panel (contents TBD) ---------- */}
-      {panelOpen && (
+      {showPanel && (
         <aside className="sticky top-0 hidden h-screen w-80 flex-none flex-col border-l border-line bg-panel lg:flex">
           <div className="flex h-14 items-center justify-between border-b border-line px-4">
             <MonoLabel>Panel</MonoLabel>

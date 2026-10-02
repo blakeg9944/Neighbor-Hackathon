@@ -47,11 +47,13 @@ class TileUpdate(BaseModel):
 class Layout(BaseModel):
     sections: dict[Category, list[str]]
     unused: list[str] = []
+    overrides: dict[str, str] = {}  # tile id -> text edited for THIS resume only; the bank tile is untouched
 
 
 class ResolvedLayout(BaseModel):
-    sections: dict[Category, list[Tile]]
+    sections: dict[Category, list[Tile]]   # tiles carry their bank text; apply `overrides` for display
     unused: list[Tile]
+    overrides: dict[str, str] = {}
 
 
 class Job(BaseModel):

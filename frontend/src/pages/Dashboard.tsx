@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import PdfModal, { pdfFilename } from "../components/PdfModal";
 import {
-  Band, Button, ErrorBanner, errorMessage, formatStamp, MonoLabel, Modal, PageTitle, Spinner, UrlForm,
+  Band, ErrorBanner, errorMessage, formatStamp, MonoLabel, PageTitle, Spinner, UrlForm,
 } from "../components/ui";
 import { Api } from "../lib/api";
-import type { GeneratedPdf, JobDetail, JobListItem } from "../lib/types";
+import type { JobListItem } from "../lib/types";
 
 type Filter = "all" | "pdf" | "draft";
 
@@ -14,7 +13,6 @@ export default function Dashboard() {
   const [jobs, setJobs] = useState<JobListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     Api.listJobs().then(setJobs).catch((e) => setError(errorMessage(e)));
@@ -99,7 +97,7 @@ export default function Dashboard() {
               {visible.map((j) => (
                 <tr
                   key={j.id}
-                  onClick={() => setOpenId(j.id)}
+                  onClick={() => navigate(`/jobs/${j.id}/review`)}
                   className="cursor-pointer border-b border-line align-top hover:bg-hover"
                 >
                   <td className="w-px py-3.5 pr-3 pl-5 font-mono text-[11px] whitespace-nowrap text-muted lg:pl-7">
@@ -128,13 +126,7 @@ export default function Dashboard() {
                     </span>
                   </td>
                   <td className="py-3.5 pr-5 pl-3 text-right whitespace-nowrap lg:pr-7">
-                    <Link
-                      to={`/jobs/${j.id}/review`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-accent hover:underline"
-                    >
-                      {j.pdf_count ? "Edit" : "Review"}
-                    </Link>
+<span className="text-accent">{j.pdf_count ? "Edit" : "Review"} →</span>
                   </td>
                 </tr>
               ))}
@@ -143,7 +135,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {openId && <JobModal jobId={openId} onClose={() => setOpenId(null)} />}
     </div>
   );
 }
@@ -151,117 +142,3 @@ export default function Dashboard() {
 function Th({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
   return <th className={`label-mono px-3 py-2.5 font-normal ${className}`}>{children}</th>;
 }
-
-type Tab = "overview" | "resume" | "pdfs";
-
-function JobModal({ jobId, onClose }: { jobId: string; onClose: () => void }) {
-  const navigate = useNavigate();
-  const [job, setJob] = useState<JobDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
-  const [viewing, setViewing] = useState<GeneratedPdf | null>(null);
-
-  useEffect(() => {
-    Api.getJob(jobId).then(setJob).catch((e) => setError(errorMessage(e)));
-  }, [jobId]);
-
-  const tabs: [Tab, string][] = [
-    ["overview", "Overview"],
-    ["resume", "Resume"],
-    ["pdfs", `PDFs${job ? ` · ${job.pdfs.length}` : ""}`],
-  ];
-  const used = job ? Object.values(job.layout.sections).reduce((n, s) => n + s.length, 0) : 0;
-
-  return (
-    <>
-      <Modal
-        open={!viewing}
-        onClose={onClose}
-        title={job ? `${job.title ?? "Job"}${job.company ? ` · ${job.company}` : ""}` : "Loading…"}
-      >
-        <div className="flex border-b border-line px-5">
-          {tabs.map(([t, label]) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`-mb-px border-b-2 px-3 py-2.5 ${
-                tab === t ? "border-ink font-medium text-ink" : "border-transparent text-ink2 hover:text-ink"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <ErrorBanner error={error} />
-        {!job && !error && (
-          <div className="flex justify-center py-10 text-muted">
-            <Spinner className="h-5 w-5" />
-          </div>
-        )}
-        {job && tab === "overview" && (
-          <div className="flex flex-col gap-4 p-5">
-            {typeof job.fit === "number" && (
-              <MonoLabel>
-                Fit <span className="text-ink">{Math.round(job.fit * 100)}%</span>
-              </MonoLabel>
-            )}
-            {job.summary && <p className="text-ink2">{job.summary}</p>}
-            {job.bullets.length > 0 && (
-              <ul className="border-t border-line">
-                {job.bullets.map((b, i) => (
-                  <li key={i} className="flex gap-3 border-b border-line py-2">
-                    <span className="font-mono text-[11px] text-muted">{String(i + 1).padStart(2, "0")}</span>
-                    {b}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <a href={job.url} target="_blank" rel="noreferrer" className="break-all text-accent hover:underline">
-              View job posting ↗
-            </a>
-          </div>
-        )}
-        {job && tab === "resume" && (
-          <div className="flex flex-col items-start gap-3 p-5 text-ink2">
-            <p>
-              {used} entries on this resume, {job.layout.unused.length} unused. Review and rearrange them, then generate a
-              new PDF.
-            </p>
-            <Button variant="primary" onClick={() => navigate(`/jobs/${job.id}/review`)}>
-              View / Edit resume
-            </Button>
-          </div>
-        )}
-        {job && tab === "pdfs" && (
-          <div>
-            {job.pdfs.length === 0 && <p className="p-5 text-ink2">No PDFs generated yet.</p>}
-            {job.pdfs.map((p, i) => (
-              <div key={p.id} className="flex items-center justify-between border-b border-line px-5 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-xs">{formatStamp(p.created_at)}</span>
-                  {i === 0 && (
-                    <span className="label-mono border border-accent-line bg-accent-bg px-1.5 !text-accent">Latest</span>
-                  )}
-                </div>
-                <div className="flex gap-4">
-                  <button onClick={() => setViewing(p)} className="text-accent hover:underline">
-                    View
-                  </button>
-                  <a href={p.url} download={pdfFilename(job.title, job.company)} className="text-accent hover:underline">
-                    Download ↓
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Modal>
-      <PdfModal
-        pdf={viewing}
-        filename={pdfFilename(job?.title ?? null, job?.company ?? null)}
-        onClose={() => setViewing(null)}
-      />
-    </>
-  );
-}
-

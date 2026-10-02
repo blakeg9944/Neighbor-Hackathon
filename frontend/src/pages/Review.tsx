@@ -22,11 +22,13 @@ import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import PdfModal, { pdfFilename } from "../components/PdfModal";
-import { Band, Button, ErrorBanner, errorMessage, GroupHeader, IconButton, MonoLabel, PageTitle, Spinner, TileText } from "../components/ui";
+import {
+  Band, Button, ErrorBanner, errorMessage, GroupHeader, IconButton, MonoLabel, PageTitle, Spinner, TileEditor, TileText,
+} from "../components/ui";
 import { Api } from "../lib/api";
 import {
   CATEGORY_LABELS, CATEGORY_ORDER, toLayout,
-  type Category, type GeneratedPdf, type JobDetail, type Tile,
+  type Category, type GeneratedPdf, type JobDetail, type Overrides, type Tile,
 } from "../lib/types";
 
 type ContainerId = Category | "unused";
@@ -43,12 +45,16 @@ export default function Review() {
   const [repicking, setRepicking] = useState(false);
   const [pdf, setPdf] = useState<GeneratedPdf | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Per-resume text edits (tile id -> text). Saved with this resume's layout; the bank is untouched.
+  const [overrides, setOverrides] = useState<Overrides>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     Api.getJob(id!)
       .then((j) => {
         setJob(j);
         setContainers({ ...j.layout.sections, unused: j.layout.unused });
+        setOverrides(j.layout.overrides ?? {});
       })
       .catch((e) => setError(errorMessage(e)));
   }, [id]);
@@ -124,7 +130,7 @@ export default function Review() {
 
   const currentLayout = () => {
     const { unused, ...sections } = containers;
-    return toLayout({ sections, unused });
+    return toLayout({ sections, unused, overrides });
   };
 
   const save = async () => {
@@ -148,12 +154,43 @@ export default function Review() {
       const j = await Api.autoselect(job.id);
       setJob(j);
       setContainers({ ...j.layout.sections, unused: j.layout.unused });
+      setOverrides(j.layout.overrides ?? {});
+      setEditingId(null);
       setDirty(false);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setRepicking(false);
     }
+  };
+
+  const saveOverride = (tile: Tile, text: string) => {
+    setEditingId(null);
+    setOverrides((o) => {
+      const next = { ...o };
+      if (text === tile.text) delete next[tile.id]; // same as the bank: no override needed
+      else next[tile.id] = text;
+      return next;
+    });
+    setDirty(true);
+  };
+
+  const revertOverride = (tileId: string) => {
+    setOverrides((o) => {
+      const next = { ...o };
+      delete next[tileId];
+      return next;
+    });
+    setDirty(true);
+  };
+
+  const editing: Editing = {
+    overrides,
+    editingId,
+    onEdit: setEditingId,
+    onSave: saveOverride,
+    onCancel: () => setEditingId(null),
+    onRevert: revertOverride,
   };
 
   const generate = async () => {
@@ -234,19 +271,29 @@ export default function Review() {
                 tiles={containers[c]}
                 numberOf={numberOf}
                 onRemove={moveToUnused}
+                editing={editing}
               />
             ))}
           </div>
           <div className="lg:sticky lg:top-14 lg:max-h-[calc(100vh-3.5rem)] lg:overflow-y-auto">
-            <Section id="unused" title={`Unused · ${containers.unused.length}`} tiles={containers.unused} unused />
+            <Section id="unused" title={`Unused · ${containers.unused.length}`} tiles={containers.unused} unused editing={editing} />
           </div>
         </div>
-        <DragOverlay>{activeTile ? <Row tile={activeTile} overlay /> : null}</DragOverlay>
+        <DragOverlay>{activeTile ? <Row tile={activeTile} text={overrides[activeTile.id]} overlay /> : null}</DragOverlay>
       </DndContext>
 
       <PdfModal pdf={pdf} filename={pdfFilename(job.title, job.company)} onClose={() => setPdf(null)} />
     </div>
   );
+}
+
+interface Editing {
+  overrides: Overrides;
+  editingId: string | null;
+  onEdit: (id: string) => void;
+  onSave: (tile: Tile, text: string) => void;
+  onCancel: () => void;
+  onRevert: (id: string) => void;
 }
 
 function Section({
@@ -256,6 +303,7 @@ function Section({
   numberOf,
   onRemove,
   unused = false,
+  editing,
 }: {
   id: ContainerId;
   title: string;
@@ -263,6 +311,7 @@ function Section({
   numberOf?: Map<string, number>;
   onRemove?: (id: string) => void;
   unused?: boolean;
+  editing: Editing;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
@@ -271,7 +320,14 @@ function Section({
       <SortableContext items={tiles.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div ref={setNodeRef} className={`min-h-12 ${isOver ? "bg-accent-bg" : ""}`}>
           {tiles.map((t) => (
-            <SortableRow key={t.id} tile={t} number={numberOf?.get(t.id)} onRemove={onRemove} unused={unused} />
+            <SortableRow
+              key={t.id}
+              tile={t}
+              number={numberOf?.get(t.id)}
+              onRemove={onRemove}
+              unused={unused}
+              editing={editing}
+            />
           ))}
           {tiles.length === 0 && (
             <div className="mx-5 my-3 border border-dashed border-line2 py-2.5 text-center text-muted lg:mx-6">
@@ -284,34 +340,81 @@ function Section({
   );
 }
 
-function SortableRow(props: { tile: Tile; number?: number; onRemove?: (id: string) => void; unused?: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.tile.id });
+function SortableRow({
+  tile,
+  number,
+  onRemove,
+  unused,
+  editing,
+}: {
+  tile: Tile;
+  number?: number;
+  onRemove?: (id: string) => void;
+  unused?: boolean;
+  editing: Editing;
+}) {
+  const isEditing = editing.editingId === tile.id;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: tile.id,
+    disabled: isEditing, // typing or selecting text must not start a drag
+  });
+  const override = editing.overrides[tile.id];
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={isDragging ? "opacity-30" : ""}
-      {...attributes}
-      {...listeners}
+      // While editing, drop the drag role/handlers so the textarea isn't nested in a disabled "button".
+      {...(isEditing ? {} : { ...attributes, ...listeners })}
     >
-      <Row {...props} />
+      {isEditing ? (
+        <div className="flex items-start gap-3 border-b border-line bg-hover px-5 py-3 lg:px-6">
+          <span className="w-4 flex-none" />
+          <div className="min-w-0 flex-1">
+            <TileEditor
+              initial={override ?? tile.text}
+              onSave={(text) => editing.onSave(tile, text)}
+              onCancel={editing.onCancel}
+              saveLabel="Apply to this resume"
+              note="Only changes this resume; your bank entry stays the same."
+            />
+          </div>
+        </div>
+      ) : (
+        <Row
+          tile={tile}
+          text={override}
+          number={number}
+          onRemove={onRemove}
+          unused={unused}
+          onEdit={() => editing.onEdit(tile.id)}
+          onRevert={override !== undefined ? () => editing.onRevert(tile.id) : undefined}
+        />
+      )}
     </div>
   );
 }
 
 function Row({
   tile,
+  text,
   number,
   onRemove,
+  onEdit,
+  onRevert,
   unused,
   overlay,
 }: {
   tile: Tile;
+  text?: string; // per-resume override, if any
   number?: number;
   onRemove?: (id: string) => void;
+  onEdit?: () => void;
+  onRevert?: () => void;
   unused?: boolean;
   overlay?: boolean;
 }) {
+  const stop = (e: React.PointerEvent) => e.stopPropagation(); // row buttons must not start a drag
   return (
     <div
       className={`group flex cursor-grab items-start gap-3 border-b border-line px-5 py-3 active:cursor-grabbing lg:px-6 ${
@@ -323,15 +426,28 @@ function Row({
         <span className="w-5 flex-none pt-0.5 font-mono text-[11px] text-muted">{String(number).padStart(2, "0")}</span>
       )}
       <div className="min-w-0 flex-1">
-        <TileText text={tile.text} />
-        {unused && <MonoLabel className="mt-1 block">{CATEGORY_LABELS[tile.category]}</MonoLabel>}
+        <TileText text={text ?? tile.text} />
+        <div className="flex flex-wrap items-center gap-x-3">
+          {unused && <MonoLabel className="mt-1">{CATEGORY_LABELS[tile.category]}</MonoLabel>}
+          {text !== undefined && (
+            <span className="mt-1 flex items-center gap-2">
+              <MonoLabel className="!text-accent">Edited for this resume</MonoLabel>
+              {onRevert && (
+                <button onPointerDown={stop} onClick={onRevert} className="text-xs text-muted underline hover:text-ink">
+                  Revert to bank
+                </button>
+              )}
+            </span>
+          )}
+        </div>
       </div>
+      {onEdit && (
+        <IconButton onPointerDown={stop} onClick={onEdit} title="Edit for this resume only">
+          ✎
+        </IconButton>
+      )}
       {onRemove && (
-        <IconButton
-          onClick={() => onRemove(tile.id)}
-          onPointerDown={(e) => e.stopPropagation()}
-          title="Remove from this resume (moves to Unused)"
-        >
+        <IconButton onPointerDown={stop} onClick={() => onRemove(tile.id)} title="Remove from this resume (moves to Unused)">
           ✕
         </IconButton>
       )}

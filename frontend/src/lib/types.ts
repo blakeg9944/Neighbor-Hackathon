@@ -33,14 +33,19 @@ export interface Tile {
   created_at: string;
 }
 
+/** Tile id -> text edited for ONE resume only. The bank tile keeps its own text. */
+export type Overrides = Record<string, string>;
+
 export interface Layout {
   sections: Record<Category, string[]>;
   unused: string[];
+  overrides?: Overrides;
 }
 
 export interface ResolvedLayout {
-  sections: Record<Category, Tile[]>;
+  sections: Record<Category, Tile[]>; // tiles carry their bank text; apply `overrides` for display
   unused: Tile[];
+  overrides?: Overrides;
 }
 
 export interface Job {
@@ -74,6 +79,7 @@ export const emptySections = <T,>(): Record<Category, T[]> =>
   Object.fromEntries(CATEGORY_ORDER.map((c) => [c, []])) as unknown as Record<Category, T[]>;
 
 export const toLayout = (resolved: ResolvedLayout): Layout => ({
+  overrides: resolved.overrides ?? {},
   sections: Object.fromEntries(
     CATEGORY_ORDER.map((c) => [c, resolved.sections[c].map((t) => t.id)]),
   ) as Record<Category, string[]>,

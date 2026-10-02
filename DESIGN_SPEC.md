@@ -150,6 +150,11 @@ A **layout** says which tiles are on a job's resume, in which section, and in wh
   "unused": ["tileId"]
 }
 ```
+**Per-resume text edits (`overrides`).** A layout may also carry `"overrides": {"<tileId>": "edited text"}`.
+An override changes that entry's text **for this resume only** (Review page ✎). The bank tile is untouched, and an
+overridden entry renders as freeform text in the PDF. Edits made in the **Resume Bank** are permanent (`PATCH /api/tiles/{id}`)
+and show up in every resume that doesn't override that entry. Re-pick (`/autoselect`) replaces the layout and drops overrides.
+
 On **read**, the backend returns a `ResolvedLayout`, which has the same shape but full `Tile` objects instead of IDs, and:
 - drops IDs of tiles that no longer exist (e.g. deleted from the bank)
 - appends to `unused` any bank tiles that are missing from the layout (e.g. added after the layout was made)
@@ -239,10 +244,12 @@ interface Tile {                       // DB: resume_items (text <- content_text
 interface Layout {                       // write form
   sections: Record<Category, string[]>;  // tile IDs, ordered
   unused: string[];
+  overrides?: Record<string, string>;    // tile id -> text edited for THIS resume only (§4.3)
 }
 interface ResolvedLayout {               // read form
   sections: Record<Category, Tile[]>;
   unused: Tile[];
+  overrides?: Record<string, string>;    // tiles keep their bank text; apply overrides for display
 }
 
 interface Job {                          // DB: jobs (+ saved_jobs.created_at as created_at)
@@ -279,8 +286,8 @@ interface JobDetail extends Job {
 | `GET /api/jobs` | – | `JobListItem[]` | the user's saved jobs, newest first |
 | `GET /api/jobs/{id}` | – | `JobDetail` | 404 if the user has no `saved_jobs` row for it. If the saved layout places **none** of the current bank tiles (bank was replaced by a new upload), tiles are re-picked automatically (slow, one LLM call). |
 | `POST /api/jobs/{id}/autoselect` | – | `JobDetail` | **(added)** re-run `llm.select_tiles` against the current bank and overwrite the saved layout. Review page **"Re-pick tiles"** button. 400 `EMPTY_BANK` if the bank is empty. |
-| `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits |
-| `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF, uploads, inserts `generated_resumes` row |
+| `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits (order, sections, Unused and per-resume `overrides`) |
+| `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF (overrides applied), uploads, inserts `generated_resumes` row |
 | `GET /api/jobs/recommended?limit=10&include_saved=false` | – | `Job[]` | **(added)** global-pool jobs most similar to the user's whole-resume embedding, ranked by `fit` (best first). Excludes jobs already on the dashboard unless `include_saved=true`. `limit` 1–50. `created_at` = when the job entered the pool. Embeds the profile on the fly if it was never embedded; empty with an empty bank or no OpenAI key. |
 | `DELETE /api/jobs/{id}` | – | `{ok: true}` | removes the user's `saved_jobs` row |
 
@@ -355,7 +362,7 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 
 **Resume Bank (`/bank`)**
 - Upload zone (PDF) **or** "paste text" textarea, which calls `POST /api/resume/parse` with a spinner.
-- Tiles grouped by the 6 categories. Each tile shows its text (keeping line breaks), a **category dropdown** (`PATCH`), and an **X** that **permanently deletes** the tile (`DELETE`, with a confirm prompt). *(stretch: inline text edit)*
+- Tiles grouped by the 6 categories. Each tile shows its text (keeping line breaks), a **category dropdown** (`PATCH`), a **✎** that edits the text inline and **saves permanently** (`PATCH {text}`; this makes a structured tile freeform), and an **X** that **permanently deletes** the tile (`DELETE`, with a confirm prompt).
 - **Add tile:** textarea + category dropdown + Add button (`POST /api/tiles`).
 - **Profile/Contact** card: name, phone, location, links (`GET/PUT /api/me`).
 
@@ -370,16 +377,14 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 - Loads `GET /api/jobs/:id`. Main area: 6 section containers in fixed order. Right sidebar: **Unused**.
 - `@dnd-kit` multi-container sortable: drag between sections and the sidebar, and reorder within each.
 - X on a tile **moves it to Unused** (this resume only; the bank is untouched).
+- ✎ on a tile edits its text **for this resume only** (stored in `layout.overrides`, saved with Save / Generate PDF). Edited rows show "Edited for this resume" and a **Revert to bank** link. Dragging is disabled while a row is being edited.
 - Buttons: **Save** (`PUT …/layout`) and **Generate PDF** (`POST …/pdfs`). After generating, show the PDF in an `<iframe>` modal with a **Download** button.
 - Header: job title/company + link to the posting.
 
 **Dashboard (`/`)**
 - "Tailor a resume" URL input, which navigates to `/generate?url=…`.
-- Grid of cards (`GET /api/jobs`): title, company, date, and "N PDFs, latest <date>".
-- Clicking a card opens a modal with tabs:
-  - **Overview:** summary, bullets, posting link
-  - **Resume:** "View / Edit resume" button to `/jobs/:id/review`
-  - **PDFs:** newest first, date-stamped, latest marked "Latest", each with View/Download
+- Table of jobs (`GET /api/jobs`), most recent first: role, company, fit (when available), PDF count, last generated, status.
+- **Clicking a row opens `/jobs/:id/review` directly** (no popup). The job overview (summary, key requirements, posting link) and PDF history move onto the edit page as part of its redesign (TBD).
 
 ### 8.3 Frontend structure
 ```
@@ -406,7 +411,7 @@ frontend/src/
 
 ### 8.5 Visual design
 Mockup: `design/mockups/6-hybrid.html` (kept local, gitignored). Rules for any new UI:
-- **Layout:** left sidebar (New resume, Workspace nav, account) · main column framed by hatched gutters · optional right **Panel** toggled from the top bar (contents TBD). The dashboard lists jobs most-recent-first; there is no "Recent" list in the sidebar.
+- **Layout:** left sidebar (New resume, Workspace nav, account) · main column framed by hatched gutters · optional right **Panel** toggled from the top bar (contents TBD; not shown on the home/Dashboard page). The dashboard lists jobs most-recent-first; there is no "Recent" list in the sidebar.
 - **Lists, not cards:** rows separated by 1px hairlines, mono row numbers (`01`), grouped under `GroupHeader` bands (`EDUCATION · 1`). **Square corners everywhere** (no `rounded-*` except status dots).
 - **Type:** Geist (UI) + Geist Mono (labels, numbers, timestamps). Small uppercase labels use the `label-mono` utility.
 - **Color tokens** (`src/index.css`; use Tailwind classes like `bg-bg text-ink border-line text-accent`, never raw colors). Light or dark **follows the browser/OS setting** (`prefers-color-scheme`); there is no in-app toggle.
@@ -549,4 +554,4 @@ Each person owns specific files. **Don't edit another person's files without ask
 | `localhost` vs `127.0.0.1` session split | Always use `localhost` for the website and in the extension |
 
 ## 15. Stretch goals (only after Checkpoint 2)
-Bullet rewriting tailored to the job · inline tile text edit · ~~"Re-run auto-select" button on Review~~ (done) · delete job card · DOCX upload · popup shows "signed in as …" · AWS hosting.
+Bullet rewriting tailored to the job · ~~inline tile text edit~~ (done: bank = permanent, review = per-resume) · ~~"Re-run auto-select" button on Review~~ (done) · delete job card · DOCX upload · popup shows "signed in as …" · AWS hosting.

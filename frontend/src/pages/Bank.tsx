@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import {
-  Band, Button, CategorySelect, ErrorBanner, errorMessage, GroupHeader, IconButton, MonoLabel, PageTitle, Spinner, TileText,
+  Band, Button, CategorySelect, ErrorBanner, errorMessage, GroupHeader, IconButton, MonoLabel, PageTitle, Spinner, TileEditor,
+  TileText,
 } from "../components/ui";
 import { Api } from "../lib/api";
 import { CATEGORY_LABELS, CATEGORY_ORDER, type Category, type Profile, type Tile } from "../lib/types";
@@ -8,6 +9,7 @@ import { CATEGORY_LABELS, CATEGORY_ORDER, type Category, type Profile, type Tile
 export default function Bank() {
   const [tiles, setTiles] = useState<Tile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     Api.listTiles().then(setTiles).catch((e) => setError(errorMessage(e)));
@@ -17,6 +19,20 @@ export default function Bank() {
     setTiles((ts) => ts!.map((t) => (t.id === tile.id ? { ...t, category } : t)));
     try {
       await Api.updateTile(tile.id, { category });
+    } catch (e) {
+      setError(errorMessage(e));
+      setTiles((ts) => ts!.map((t) => (t.id === tile.id ? tile : t)));
+    }
+  };
+
+  /** Bank edits are permanent: they change this entry everywhere it's used (unless a resume overrides it). */
+  const onEditSave = async (tile: Tile, text: string) => {
+    setEditingId(null);
+    if (text === tile.text) return;
+    setTiles((ts) => ts!.map((t) => (t.id === tile.id ? { ...t, text } : t)));
+    try {
+      const saved = await Api.updateTile(tile.id, { text });
+      setTiles((ts) => ts!.map((t) => (t.id === tile.id ? saved : t)));
     } catch (e) {
       setError(errorMessage(e));
       setTiles((ts) => ts!.map((t) => (t.id === tile.id ? tile : t)));
@@ -64,10 +80,22 @@ export default function Bank() {
                     {String(++n).padStart(2, "0")}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <TileText text={t.text} />
+                    {editingId === t.id ? (
+                      <TileEditor
+                        initial={t.text}
+                        onSave={(text) => onEditSave(t, text)}
+                        onCancel={() => setEditingId(null)}
+                        note="Saves to your bank permanently."
+                      />
+                    ) : (
+                      <TileText text={t.text} />
+                    )}
                   </div>
                   <div className="flex flex-none items-center gap-2">
                     <CategorySelect value={t.category} onChange={(cat) => onCategory(t, cat)} />
+                    <IconButton onClick={() => setEditingId(t.id)} title="Edit entry" disabled={editingId === t.id}>
+                      ✎
+                    </IconButton>
                     <IconButton onClick={() => onDelete(t)} title="Delete from bank">
                       ✕
                     </IconButton>

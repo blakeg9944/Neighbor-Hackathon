@@ -150,6 +150,50 @@ export function TileText({ text }: { text: string }) {
   );
 }
 
+/** Inline editor for an entry's text. Ctrl/Cmd+Enter saves, Esc cancels. */
+export function TileEditor({
+  initial,
+  onSave,
+  onCancel,
+  saveLabel = "Save",
+  note,
+}: {
+  initial: string;
+  onSave: (text: string) => void;
+  onCancel: () => void;
+  saveLabel?: string;
+  note?: ReactNode;
+}) {
+  const [text, setText] = useState(initial);
+  const lines = Math.min(Math.max(text.split("\n").length + 1, 3), 12);
+  const save = () => text.trim() && onSave(text.trim());
+  return (
+    <div className="flex min-w-0 flex-col gap-2" onPointerDown={(e) => e.stopPropagation()}>
+      <textarea
+        autoFocus
+        value={text}
+        rows={lines}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation(); // keep Space/Enter away from drag-and-drop keyboard handling
+          if (e.key === "Escape") onCancel();
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) save();
+        }}
+        className="w-full resize-y border border-accent bg-bg px-3 py-2 outline-none"
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" onClick={save} disabled={!text.trim()}>
+          {saveLabel}
+        </Button>
+        <Button onClick={onCancel}>Cancel</Button>
+        <span className="text-xs text-muted">
+          {note ?? "First line is the heading; start lines with “• ” for bullets."} Ctrl+Enter to save.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** Square icon button for row actions (×). */
 export function IconButton({ className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (

@@ -98,7 +98,10 @@ function resolve(layout: Layout): ResolvedLayout {
   for (const c of CATEGORY_ORDER) sections[c] = pick(layout.sections[c] ?? []);
   const unused = pick(layout.unused);
   unused.push(...state.tiles.filter((t) => !placed.has(t.id)));
-  return { sections, unused };
+  const overrides = Object.fromEntries(
+    Object.entries(layout.overrides ?? {}).filter(([id, text]) => byId.has(id) && text.trim()),
+  );
+  return { sections, unused, overrides };
 }
 
 const BUDGET: Record<Category, number> = { education: 2, coursework: 1, skills: 4, experience: 4, projects: 3, other: 2 };
@@ -253,7 +256,7 @@ export const mockApi = {
     for (const c of CATEGORY_ORDER) {
       if (!resolved.sections[c].length) continue;
       lines.push(c.toUpperCase());
-      for (const t of resolved.sections[c]) lines.push(...t.text.split("\n"));
+      for (const t of resolved.sections[c]) lines.push(...(resolved.overrides?.[t.id] ?? t.text).split("\n"));
       lines.push("");
     }
     const pdf = { id: uid(), created_at: now(), lines };

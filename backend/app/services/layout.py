@@ -4,7 +4,8 @@ from .tile_data import pdf_lines
 
 
 def normalize_layout(layout: dict | None, tiles: list[dict]) -> dict:
-    """Drop unknown IDs, de-duplicate, append every unplaced bank tile to unused."""
+    """Drop unknown IDs, de-duplicate, append every unplaced bank tile to unused.
+    `overrides` ({tile id: text}) are per-resume text edits; kept only for known tiles with non-empty text."""
     layout = layout or {}
     known = {t["id"] for t in tiles}
     seen: set[str] = set()
@@ -20,7 +21,11 @@ def normalize_layout(layout: dict | None, tiles: list[dict]) -> dict:
     sections = {c: keep((layout.get("sections") or {}).get(c)) for c in CATEGORIES}
     unused = keep(layout.get("unused"))
     unused += [t["id"] for t in tiles if t["id"] not in seen]
-    return {"sections": sections, "unused": unused}
+    overrides = {
+        i: text for i, text in (layout.get("overrides") or {}).items()
+        if i in known and isinstance(text, str) and text.strip()
+    }
+    return {"sections": sections, "unused": unused, "overrides": overrides}
 
 
 def resolve_layout(layout: dict | None, tiles: list[dict]) -> dict:
@@ -30,11 +35,14 @@ def resolve_layout(layout: dict | None, tiles: list[dict]) -> dict:
     return {
         "sections": {c: [by_id[i] for i in ids] for c, ids in norm["sections"].items()},
         "unused": [by_id[i] for i in norm["unused"]],
+        "overrides": norm["overrides"],
     }
 
 
 def section_texts(layout: dict, tiles: list[dict]) -> dict[str, list[str]]:
     """Normalized layout -> {category: [line text, ...]} for pdf.render_resume.
-    Individual skill/course tiles are regrouped into lines ("Languages: Python, Java")."""
-    by_id = {t["id"]: t for t in tiles}
+    Individual skill/course tiles are regrouped into lines ("Languages: Python, Java").
+    A per-resume override replaces the tile's text and makes it freeform (its own line) for this PDF."""
+    overrides = layout.get("overrides") or {}
+    by_id = {t["id"]: ({**t, "text": overrides[t["id"]], "data": None} if t["id"] in overrides else t) for t in tiles}
     return {c: pdf_lines(c, [by_id[i] for i in ids if i in by_id]) for c, ids in layout["sections"].items()}
