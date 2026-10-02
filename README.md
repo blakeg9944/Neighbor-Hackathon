@@ -28,39 +28,42 @@ Live at **https://trimdcv.com**. (Older code and docs may still say "Resume Adap
 
 ## Repo layout
 ```
-frontend/                   React website                                (James)
-  src/pages/                Login, Dashboard, Bank, Profile, Opportunities, Generate, Review
-  src/components/review/    Review page panes: job points, editor, live preview
-  src/lib/                  supabase.ts (auth + api()), api.ts, types.ts, mock.ts, templates.ts, preview.ts
+frontend/                     React website                                    (James)
+  src/App.tsx, main.tsx       router + auth guard
+  src/pages/                  Login, Dashboard, Bank, Profile, Opportunities, Generate, Review
+  src/components/             Layout (sidebar shell), ui.tsx (shared building blocks), PdfModal
+  src/components/review/      Review page panes: job points, editor, live preview
+  src/lib/                    supabase.ts + auth.tsx (sign-in, session), api.ts, types.ts, mock.ts,
+                              templates.ts + preview.ts (live PDF preview), storage.ts (saved prefs)
 backend/
-  run.py                    starts the API on :8000                      (database guy)
-  seed_jobs.py              bulk-add job URLs to the shared job pool
+  run.py                      starts the API on :8000                          (Wyatt)
+  seed_jobs.py, ksl_jobs.txt  bulk-add job URLs to the shared job pool, plus a sample list
   app/
-    main.py, routes.py, schemas.py, auth.py                              (database guy)
-    db/                     data access per table, filtered by user_id   (database guy)
-    fonts/                  bundled PDF fonts (Crimson Text, Lato)
+    main.py, routes.py, schemas.py, auth.py                                    (Wyatt)
+    db/                       data access per table, filtered by user_id       (Wyatt)
+    fonts/                    bundled PDF fonts (Crimson Text, Lato)
     services/
-      llm.py, pdf.py                                                     (openai guy)
-      scraper.py                                                         (extension guy)
+      llm.py, pdf.py                                                           (Blake)
+      scraper.py                                                               (Peter)
       job_service.py, bank_service.py, profile_service.py,
-      autofill_service.py, layout.py, tile_data.py, errors.py            route logic
-shared/resume_templates.json  PDF template styles, read by pdf.py and the live preview
-ChromeExtension/            popup, config.js, authBridge.js              (extension guy)
-supabase/migrations/        schema migrations                            (database guy)
-deploy/                     Caddyfiles, systemd unit, deploy README
-amplify.yml                 Amplify build for frontend/
-.github/workflows/          backend auto-deploy on push to `prod`
+      autofill_service.py, layout.py, tile_data.py, errors.py                  route logic
+shared/                       resume_templates.json: PDF styles, read by pdf.py and the live preview
+ChromeExtension/              popup, config.js (local/production), authBridge.js, icons (Peter)
+supabase/                     config.toml + migrations/                        (Wyatt)
+deploy/                       Caddyfiles, systemd unit, deploy README          (Blake)
+amplify.yml                   Amplify build for frontend/
+.github/workflows/            backend auto-deploy on push to `prod`
 ```
 
 ## Team
-| Role | Area |
+| Who | Area |
 |---|---|
-| James | Website (all pages, drag-and-drop review, dashboard) + Google auth setup |
-| Extension guy | Chrome extension (popup, auto-apply), job-page scraping, demo prep + QA |
-| OpenAI guy | Resume parsing, job summary, tile selection, form-field mapping (OpenAI) + PDF rendering |
-| Database guy | Supabase schema/migrations, storage, FastAPI routes |
+| James | Website (all pages, three-pane Review editor, dashboard) + Google auth setup |
+| Peter | Chrome extension (popup, auth bridge, auto-apply), job-page scraping, demo prep + QA |
+| Blake | OpenAI (resume parsing, job summary, tile selection, form-field mapping) + PDF rendering, AWS deploy |
+| Wyatt | Supabase schema/migrations, storage, FastAPI routes |
 
-See [DESIGN_SPEC.md §11](DESIGN_SPEC.md#11-division-of-labor) for detailed tasks.
+[DESIGN_SPEC.md §11](DESIGN_SPEC.md#11-division-of-labor) has detailed tasks. It uses role names: James = website, Peter = extension guy, Blake = openai guy, Wyatt = database guy.
 
 ## Local setup
 
@@ -70,7 +73,7 @@ Node 20+, Python 3.11+, [Supabase CLI](https://supabase.com/docs/guides/cli), Ch
 ### Environment
 Copy `backend/.env.example` to `backend/.env` and `frontend/.env.example` to `frontend/.env`, then fill them in (see [DESIGN_SPEC.md §10](DESIGN_SPEC.md#10-configuration)). Get keys from the team. **Never commit `.env` files.**
 
-### Database (database guy, once per new migration)
+### Database (Wyatt, once per new migration)
 ```bash
 supabase link --project-ref <project-ref>
 supabase db push
