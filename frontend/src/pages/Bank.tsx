@@ -44,7 +44,7 @@ export default function Bank() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="flex flex-col gap-6">
-          <UploadCard onParsed={(created) => setTiles((ts) => [...(ts ?? []), ...created])} />
+          <UploadCard onParsed={(created) => setTiles(created)} /* upload replaces the whole bank */ />
 
           {tiles === null ? (
             <div className="flex justify-center py-10 text-slate-400">

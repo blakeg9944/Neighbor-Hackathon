@@ -12,13 +12,18 @@ from typing import Literal
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
+from .tile_data import (
+    CourseData, EducationData, ExperienceData, OtherData, ProjectData, SkillData, render_text,
+)
+
 load_dotenv()
 
 # Fixed order used everywhere (DESIGN_SPEC §4.1)
 CATEGORIES: tuple[str, ...] = ("education", "coursework", "skills", "experience", "projects", "other")
 
 # Rough one-page budget per section (DESIGN_SPEC §7.1)
-BUDGET: dict[str, int] = {"education": 2, "coursework": 1, "skills": 4, "experience": 4, "projects": 3, "other": 2}
+# skills/coursework are one tile per skill/course, so their budgets count individual items.
+BUDGET: dict[str, int] = {"education": 2, "coursework": 6, "skills": 12, "experience": 4, "projects": 3, "other": 2}
 
 MODEL = os.getenv("OPENAI_MODEL") or "gpt-5.6-luna"
 # gpt-5 models default to medium reasoning (~3x slower on extract_tiles); "low" keeps quality, "none" is fastest.
@@ -70,54 +75,61 @@ def _parse(instructions: str, user_input: str, schema: type[BaseModel]) -> BaseM
 # ---------------------------------------------------------------------------
 # extract_tiles
 # ---------------------------------------------------------------------------
-class _TileOut(BaseModel):
-    category: Category
-    text: str = Field(description="Line 1 = heading. Following lines = body; bullet lines start with '• '.")
+class _ResumeOut(BaseModel):
+    education: list[EducationData]
+    coursework: list[CourseData]
+    skills: list[SkillData]
+    experience: list[ExperienceData]
+    projects: list[ProjectData]
+    other: list[OtherData]
 
 
-class _TilesOut(BaseModel):
-    tiles: list[_TileOut]
+EXTRACT_INSTRUCTIONS = """You turn a resume into structured entries for a resume builder.
 
-
-EXTRACT_INSTRUCTIONS = """You split a resume into "tiles" for a resume builder. One tile = one resume entry.
-
-Categories (use exactly these): education, coursework, skills, experience, projects, other.
-
-Tile text format (strict):
-- Line 1 is the entry's heading, e.g. "Software Engineering Intern, Acme Corp (May 2024 – Aug 2024)"
-  or "B.S. Computer Science, State University (Expected May 2026), GPA 3.8".
-- Following lines are the body. Every bullet line starts with "• " (bullet + space).
-- Separate lines with "\\n". No blank lines, no markdown.
+Return one list per category: education, coursework, skills, experience, projects, other.
 
 Rules:
-- One tile per job, degree, project, award, etc. Keep each entry's bullets inside its tile.
-- Keep the original wording VERBATIM. Only clean up whitespace and normalize bullet characters to "• ".
-- If education lists courses, move them into ONE separate coursework tile:
-  "Relevant Coursework: Data Structures, Algorithms, ..." and REMOVE them from the education tile
-  (keep other details like GPA in the education tile).
-- Skills: one tile per skill line/group, e.g. "Languages: Python, TypeScript, SQL". A skills tile is a
-  SINGLE line with no bullets. Keep a label only if the resume has one; never add labels like "Skills".
-- Awards, certifications, volunteering, leadership, interests, publications -> other.
-- Skip the name/contact header (email, phone, links); that comes from the profile.
-- Never invent content."""
+- Copy every field VERBATIM from the resume (only clean up whitespace). Never invent or infer content;
+  use null (or an empty list) when a field isn't on the resume.
+- education: one entry per degree/school. degree_type = "B.S.", "M.S.", "Ph.D.", "Associate", etc.;
+  degree = field of study ("Computer Science"); gpa as written. Do NOT put courses in education.
+- coursework: ONE entry PER COURSE (e.g. "Data Structures", "Algorithms"), including courses listed under
+  education. Put a course code in `code` only if the resume shows one.
+- skills: ONE entry PER SKILL (e.g. "Python", "React", "Docker"). Split comma/slash/pipe lists into separate
+  entries. group = the resume's own label for that line ("Languages", "Frameworks", "Tools"...), else null.
+- experience: one entry per job/role (internships, research, TA positions too). bullets = the entry's bullet
+  points without the bullet character.
+- projects: one entry per project. technologies = the tech stack if listed.
+- other: awards, certifications, volunteering, leadership, publications, interests. kind = the type.
+- Skip the name/contact header (email, phone, links, address); that comes from the profile."""
+
+_EXTRACT_ORDER = ("education", "coursework", "skills", "experience", "projects", "other")
 
 
 def extract_tiles(resume_text: str) -> list[dict]:
-    """-> [{"category": Category, "text": str}], text follows DESIGN_SPEC §4.2."""
+    """-> [{"category": Category, "text": str, "data": dict}]; text is generated from data (DESIGN_SPEC §4.2)."""
     if USE_STUBS:
         return [dict(t) for t in _STUB_TILES]
-    out = _parse(EXTRACT_INSTRUCTIONS, resume_text, _TilesOut)
+    out = _parse(EXTRACT_INSTRUCTIONS, resume_text, _ResumeOut)
     tiles = []
-    for t in out.tiles:
-        lines = [_clean_line(ln) for ln in t.text.split("\n")]
-        lines = [ln for ln in lines if ln]
-        if not lines:
-            continue
-        if t.category == "skills" and len(lines) > 1 and not any(ln.startswith("• ") for ln in lines):
-            tiles += [{"category": "skills", "text": ln} for ln in lines]  # one tile per skill line (§4.2)
-        else:
-            tiles.append({"category": t.category, "text": "\n".join(lines)})
+    for category in _EXTRACT_ORDER:
+        for entry in getattr(out, category):
+            data = _clean_data(entry.model_dump())
+            text = render_text(category, data)
+            if text.strip():
+                tiles.append({"category": category, "text": text, "data": data})
     return tiles
+
+
+def _clean_data(value):
+    """Recursively clean strings from PDF text: collapse whitespace, strip leading bullet characters."""
+    if isinstance(value, dict):
+        return {k: _clean_data(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [c for c in (_clean_data(v) for v in value) if c]
+    if isinstance(value, str):
+        return _clean_line(value).removeprefix("• ").strip() or None
+    return value
 
 
 def _clean_line(line: str) -> str:
@@ -177,6 +189,8 @@ Return, for each of the 6 sections, the keys of the tiles to include, ordered mo
 - Normally keep each tile in its own category's section.
 - One-page budget (maximums): {json.dumps(BUDGET)}.
 - Prefer tiles whose skills/experience match the job's requirements. Always include education if any exists.
+- Skills and coursework tiles are ONE skill / ONE course each: pick the individual skills and courses that
+  matter for this job (most relevant first) and skip unrelated ones.
 - Leave out weak or irrelevant tiles; anything not selected goes to "unused" automatically."""
 
 
@@ -190,7 +204,7 @@ def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict:
         return _budget_layout(tiles)
 
     key_to_id = {f"t{i}": t["id"] for i, t in enumerate(tiles, 1)}
-    listing = "\n\n".join(f"[{k}] ({t['category']})\n{t['text']}" for k, t in zip(key_to_id, tiles))
+    listing = "\n\n".join(f"[{k}] ({_tile_label(t)})\n{t['text']}" for k, t in zip(key_to_id, tiles))
     job_info = {k: job.get(k) for k in ("title", "company", "summary", "bullets")}
     user_input = (
         f"JOB:\n{json.dumps(job_info, indent=1)}\n\nPOSTING TEXT (truncated):\n{(job_text or '')[:6000]}"
@@ -212,6 +226,12 @@ def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict:
     return {"sections": sections, "unused": unused}
 
 
+def _tile_label(t: dict) -> str:
+    """"skills: Languages" for grouped skills, else just the category."""
+    group = (t.get("data") or {}).get("group") if t["category"] == "skills" else None
+    return f"{t['category']}: {group}" if group else t["category"]
+
+
 def _budget_layout(tiles: list[dict]) -> dict:
     """Fallback: keep each tile in its bank category, first N per BUDGET, rest go to unused."""
     sections: dict[str, list[str]] = {c: [] for c in CATEGORIES}
@@ -228,31 +248,34 @@ def _budget_layout(tiles: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 # Stub data (used when OPENAI_API_KEY is missing)
 # ---------------------------------------------------------------------------
+def _stub(category: str, **data) -> dict:
+    return {"category": category, "text": render_text(category, data), "data": data}
+
+
 _STUB_TILES = [
-    {"category": "education",
-     "text": "B.S. Computer Science, State University (Expected May 2026), GPA 3.8"},
-    {"category": "coursework",
-     "text": "Relevant Coursework: Data Structures, Algorithms, Databases, Machine Learning, Operating Systems"},
-    {"category": "skills", "text": "Languages: Python, TypeScript, Java, SQL"},
-    {"category": "skills", "text": "Frameworks: React, FastAPI, Node.js, PyTorch"},
-    {"category": "skills", "text": "Tools: Git, Docker, AWS, PostgreSQL"},
-    {"category": "experience",
-     "text": "Software Engineering Intern, Acme Corp (May 2024 – Aug 2024)\n"
-             "• Built a Kafka ingestion service handling 2M events/day\n"
-             "• Reduced p95 API latency by 40% by adding a Redis cache"},
-    {"category": "experience",
-     "text": "Teaching Assistant, State University CS Department (Jan 2024 – Present)\n"
-             "• Led weekly labs for 40 students in Data Structures\n"
-             "• Wrote autograder tests used across 3 course sections"},
-    {"category": "projects",
-     "text": "Campus Eats (React, FastAPI, PostgreSQL)\n"
-             "• Food-truck tracker used by 1,200 students in its first month\n"
-             "• Real-time location updates over WebSockets"},
-    {"category": "projects",
-     "text": "Stock Sentiment Analyzer (Python, PyTorch)\n"
-             "• Fine-tuned a BERT model on 50k financial headlines, 87% accuracy"},
-    {"category": "other", "text": "Dean's List, 6 semesters"},
-    {"category": "other", "text": "Volunteer Math Tutor, Lincoln High School (2022 – Present)"},
+    _stub("education", institution="State University", degree="Computer Science", degree_type="B.S.", gpa="3.8",
+          minor=None, location="Provo, UT", start_date=None, end_date="Expected May 2026", details=[]),
+    *(_stub("coursework", name=c, code=None) for c in
+      ("Data Structures", "Algorithms", "Databases", "Machine Learning", "Operating Systems")),
+    *(_stub("skills", name=n, group="Languages") for n in ("Python", "TypeScript", "Java", "SQL")),
+    *(_stub("skills", name=n, group="Frameworks") for n in ("React", "FastAPI", "Node.js", "PyTorch")),
+    *(_stub("skills", name=n, group="Tools") for n in ("Git", "Docker", "AWS", "PostgreSQL")),
+    _stub("experience", title="Software Engineering Intern", organization="Acme Corp", location=None,
+          start_date="May 2024", end_date="Aug 2024",
+          bullets=["Built a Kafka ingestion service handling 2M events/day",
+                   "Reduced p95 API latency by 40% by adding a Redis cache"]),
+    _stub("experience", title="Teaching Assistant", organization="State University CS Department", location=None,
+          start_date="Jan 2024", end_date="Present",
+          bullets=["Led weekly labs for 40 students in Data Structures",
+                   "Wrote autograder tests used across 3 course sections"]),
+    _stub("projects", name="Campus Eats", technologies=["React", "FastAPI", "PostgreSQL"], link=None, date=None,
+          bullets=["Food-truck tracker used by 1,200 students in its first month",
+                   "Real-time location updates over WebSockets"]),
+    _stub("projects", name="Stock Sentiment Analyzer", technologies=["Python", "PyTorch"], link=None, date=None,
+          bullets=["Fine-tuned a BERT model on 50k financial headlines, 87% accuracy"]),
+    _stub("other", title="Dean's List", organization=None, date="6 semesters", kind="award", bullets=[]),
+    _stub("other", title="Volunteer Math Tutor", organization="Lincoln High School", date="2022 – Present",
+          kind="volunteer", bullets=[]),
 ]
 
 _STUB_JOB = {

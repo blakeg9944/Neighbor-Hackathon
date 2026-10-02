@@ -32,6 +32,7 @@ const real = {
   listJobs: () => api<JobListItem[]>("/api/jobs"),
   getJob: (id: string) => api<JobDetail>(`/api/jobs/${id}`),
   saveLayout: (id: string, layout: Layout) => api<{ ok: true }>(`/api/jobs/${id}/layout`, json("PUT", layout)),
+  autoselect: (id: string) => api<JobDetail>(`/api/jobs/${id}/autoselect`, { method: "POST" }),
   generatePdf: (id: string, layout: Layout) => api<GeneratedPdf>(`/api/jobs/${id}/pdfs`, json("POST", layout)),
 };
 

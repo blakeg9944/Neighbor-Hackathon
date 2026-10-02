@@ -66,6 +66,32 @@ def _job_text(url: str, description: str | None) -> str:
     return text
 
 
+def _select_and_save(user_id: str, job: dict, text: str, tiles: list[dict]) -> None:
+    """LLM picks tiles for the job (budget fallback on failure); save the validated layout on the card."""
+    try:
+        layout = llm.select_tiles(job, text, [{k: t[k] for k in ("id", "category", "text", "data")} for t in tiles])
+    except Exception as e:
+        print(f"select_tiles failed, using budget layout: {e}")
+        layout = llm._budget_layout(tiles)
+    jobs.save(user_id, job["id"], normalize_layout(layout, tiles))
+
+
+def _is_stale(layout: dict | None, tiles: list[dict]) -> bool:
+    """True when the saved layout places none of the current bank tiles (e.g. the resume was re-uploaded)."""
+    if not tiles:
+        return False
+    placed = {i for ids in ((layout or {}).get("sections") or {}).values() for i in ids or []}
+    return not placed & {t["id"] for t in tiles}
+
+
+def _refresh_if_stale(user_id: str, saved: dict) -> dict:
+    tiles = list_tiles(user_id)
+    if not _is_stale(saved.get("layout"), tiles):
+        return saved
+    _select_and_save(user_id, saved, saved.get("description") or "", tiles)
+    return jobs.get_saved(user_id, saved["id"])
+
+
 # --- public API -------------------------------------------------------------
 
 def create_job(user_id: str, url: str, description: str | None = None) -> dict:
@@ -73,11 +99,11 @@ def create_job(user_id: str, url: str, description: str | None = None) -> dict:
     url = url.strip()
     existing = jobs.get_by_url(url)
 
-    # 1. Already on the user's dashboard with a layout -> return as-is.
+    # 1. Already on the user's dashboard with a layout -> return it (re-picking tiles if the bank was replaced).
     if existing:
         saved = jobs.get_saved(user_id, existing["id"])
         if saved and saved.get("layout"):
-            return _detail(user_id, saved)
+            return _detail(user_id, _refresh_if_stale(user_id, saved))
 
     # 2. Need tiles to select from.
     tiles = list_tiles(user_id)
@@ -100,20 +126,24 @@ def create_job(user_id: str, url: str, description: str | None = None) -> dict:
             job = jobs.create(user_id, text, url=url, **info)
         _embed_job(job, text)
 
-    # 4. LLM picks tiles; fall back to the simple budget layout if it fails.
-    try:
-        layout = llm.select_tiles(job, text, [{k: t[k] for k in ("id", "category", "text")} for t in tiles])
-    except Exception as e:
-        print(f"select_tiles failed, using budget layout: {e}")
-        layout = llm._budget_layout(tiles)
-
-    # 5. Save the card + validated layout.
-    jobs.save(user_id, job["id"], normalize_layout(layout, tiles))
+    # 4-5. LLM picks tiles, save the card + validated layout.
+    _select_and_save(user_id, job, text, tiles)
     return _detail(user_id, jobs.get_saved(user_id, job["id"]))
 
 
 def get_job(user_id: str, job_id: str) -> dict:
-    return _detail(user_id, _get_saved(user_id, job_id))
+    """JobDetail. If the bank was replaced since the layout was made, tiles are re-picked automatically."""
+    return _detail(user_id, _refresh_if_stale(user_id, _get_saved(user_id, job_id)))
+
+
+def autoselect(user_id: str, job_id: str) -> dict:
+    """Re-run tile selection against the CURRENT bank (overwrites the saved layout) -> JobDetail."""
+    saved = _get_saved(user_id, job_id)
+    tiles = list_tiles(user_id)
+    if not tiles:
+        raise AppError(400, "EMPTY_BANK", "Your resume bank is empty. Add your resume first.")
+    _select_and_save(user_id, saved, saved.get("description") or "", tiles)
+    return _detail(user_id, jobs.get_saved(user_id, job_id))
 
 
 def list_jobs(user_id: str) -> list[dict]:

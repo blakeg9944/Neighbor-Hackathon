@@ -40,6 +40,7 @@ export default function Review() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [repicking, setRepicking] = useState(false);
   const [pdf, setPdf] = useState<GeneratedPdf | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,6 +140,22 @@ export default function Review() {
     }
   };
 
+  /** Re-run the AI tile selection against the current bank (e.g. after re-uploading a resume). */
+  const repick = async () => {
+    setRepicking(true);
+    setError(null);
+    try {
+      const j = await Api.autoselect(job.id);
+      setJob(j);
+      setContainers({ ...j.layout.sections, unused: j.layout.unused });
+      setDirty(false);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setRepicking(false);
+    }
+  };
+
   const generate = async () => {
     setGenerating(true);
     setError(null);
@@ -172,6 +189,14 @@ export default function Review() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400">{dirty ? "Unsaved changes" : "All changes saved"}</span>
+          <Button
+            variant="secondary"
+            onClick={repick}
+            disabled={repicking}
+            title="Pick tiles again from your current resume bank (replaces this layout)"
+          >
+            {repicking ? <Spinner className="h-4 w-4" /> : null} Re-pick tiles
+          </Button>
           <Button variant="secondary" onClick={save} disabled={!dirty || saving}>
             {saving ? <Spinner className="h-4 w-4" /> : null} Save
           </Button>

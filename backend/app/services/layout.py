@@ -1,5 +1,6 @@
 """Layout validation and resolution (DESIGN_SPEC §4.3, §6.3 step 4)."""
 from .llm import CATEGORIES
+from .tile_data import pdf_lines
 
 
 def normalize_layout(layout: dict | None, tiles: list[dict]) -> dict:
@@ -33,6 +34,7 @@ def resolve_layout(layout: dict | None, tiles: list[dict]) -> dict:
 
 
 def section_texts(layout: dict, tiles: list[dict]) -> dict[str, list[str]]:
-    """Normalized layout -> {category: [tile text, ...]} for pdf.render_resume."""
+    """Normalized layout -> {category: [line text, ...]} for pdf.render_resume.
+    Individual skill/course tiles are regrouped into lines ("Languages: Python, Java")."""
     by_id = {t["id"]: t for t in tiles}
-    return {c: [by_id[i]["text"] for i in ids if i in by_id] for c, ids in layout["sections"].items()}
+    return {c: pdf_lines(c, [by_id[i] for i in ids if i in by_id]) for c, ids in layout["sections"].items()}

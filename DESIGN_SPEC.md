@@ -119,7 +119,22 @@ B.S. Computer Science, State University (Expected May 2026), GPA 3.8
 ```
 Languages: Python, TypeScript, Java, SQL
 ```
-Skills: **one tile per skill group/line.** Coursework: one tile, e.g. `Relevant Coursework: Data Structures, Algorithms, Databases, ML`.
+**Structured tiles (`data`).** Parsed tiles also carry structured fields per category in `Tile.data`
+(stored in `resume_items.content`; models in `backend/app/services/tile_data.py`). When `data` is present,
+the backend **generates `text` from it**, so everything that reads `text` keeps working.
+
+| Category | `data` fields | Generated `text` |
+|---|---|---|
+| education | institution, degree, degree_type, gpa, minor, location, start_date, end_date, details[] | `B.S. Computer Science, State University (Expected May 2026), GPA 3.8` |
+| experience | title, organization, location, start_date, end_date, bullets[] | `Title, Org (Start – End)` + `• bullets` |
+| projects | name, technologies[], link, date, bullets[] | `Name (Tech, Tech)` + `• bullets` |
+| skills | name, group (e.g. "Languages" or null) | `Python` |
+| coursework | name, code (or null) | `Data Structures` |
+| other | title, organization, date, kind, bullets[] | `Title, Org (Date)` + `• bullets` |
+
+Skills and coursework are **one tile per skill / per course**, so tailoring picks individual items.
+The PDF regroups the selected ones: skills by `group` (`Languages: Python, Java`), courses into one line.
+Tiles with `data: null` are **freeform** (manual text tiles, older tiles, or any tile whose text was edited).
 
 ### 4.3 Layout
 
@@ -147,7 +162,7 @@ On **read**, the backend returns a `ResolvedLayout`, which has the same shape bu
 
 | Concept | Table | Notes |
 |---|---|---|
-| Resume tile | `resume_items` | Tile text is stored in **`content_text`**; category in **`section`**. `title/organization/start_date/end_date/content` are unused (null / `{}`). API field `text` maps to the `content_text` column. |
+| Resume tile | `resume_items` | Tile text is stored in **`content_text`**; category in **`section`**; structured fields (`Tile.data`, §4.2) in **`content`** (`{}` = freeform). `title/organization/start_date/end_date` are unused (null). |
 | Job (shared facts about a posting) | `jobs` | Global pool, deduped by `url`. Add `summary`, `bullets`. |
 | Dashboard card (a user's job) | `saved_jobs` | One row per (user, job). Add `layout` (the user's saved layout for that job). |
 | Generated PDF (history) | `generated_resumes` | One row per PDF: `job_id`, `storage_path`, `content` = layout snapshot, `title` = job title, `created_at` = date stamp. `match_score` unused. |
@@ -216,7 +231,8 @@ interface Profile {
 }
 
 interface Tile {                       // DB: resume_items (text <- content_text, category <- section)
-  id: string; category: Category; text: string;
+  id: string; category: Category; text: string;  // text is generated from data when data is present
+  data: Record<string, unknown> | null;             // structured fields per category (§4.2); null = freeform
   source_resume_id: string | null; created_at: string;
 }
 
@@ -253,22 +269,23 @@ interface JobDetail extends Job {
 | `GET /api/health` | – | `{ok: true}` | no auth |
 | `GET /api/me` | – | `Profile` | |
 | `PUT /api/me` | `Partial<Profile>` (no id/email) | `Profile` | contact info for the resume header |
-| `POST /api/resume/parse` | multipart: `file` (PDF) **or** form field `text` | `{tiles: Tile[]}` | `pdf.pdf_to_text`, then `llm.extract_tiles`, then **append** to the bank and return only new tiles. Stores the PDF in `uploads` + a `source_resumes` row. |
+| `POST /api/resume/parse` | multipart: `file` (PDF) **or** form field `text` | `{tiles: Tile[]}` | `pdf.pdf_to_text`, then `llm.extract_tiles`, then **replace** the whole bank (all existing tiles, including manual ones, are deleted, but only after parsing succeeds) and return the new tiles. Saved job layouts drop the deleted tiles; already-generated PDFs are unaffected. Stores the PDF in `uploads` + a `source_resumes` row. |
 | `GET /api/tiles` | – | `Tile[]` | ordered by category order, then created_at |
-| `POST /api/tiles` | `{category, text}` | `Tile` | manual "add tile" |
-| `PATCH /api/tiles/{id}` | `{category?, text?}` | `Tile` | category dropdown change / text edit |
+| `POST /api/tiles` | `{category, text}` **or** `{category, data}` | `Tile` | manual "add tile"; with `data`, text is generated (422 `BAD_TILE_DATA` if invalid) |
+| `PATCH /api/tiles/{id}` | `{category?, text?, data?}` | `Tile` | `data` replaces fields + regenerates text; `text` alone makes the tile freeform (`data` → null); a category change without `data` also clears `data` |
 | `DELETE /api/tiles/{id}` | – | `{ok: true}` | **permanent** delete from bank |
 | `POST /api/jobs` | `{url: string, description?: string}` | `JobDetail` | See flow §6.3. Slow (10–30 s). |
 | `POST /api/url` | `{url: string, description?: string}` | `JobDetail` | Authenticated alias of `/api/jobs` for URLs originating from the extension; website login runs first if needed. |
 | `GET /api/jobs` | – | `JobListItem[]` | the user's saved jobs, newest first |
-| `GET /api/jobs/{id}` | – | `JobDetail` | 404 if the user has no `saved_jobs` row for it |
+| `GET /api/jobs/{id}` | – | `JobDetail` | 404 if the user has no `saved_jobs` row for it. If the saved layout places **none** of the current bank tiles (bank was replaced by a new upload), tiles are re-picked automatically (slow, one LLM call). |
+| `POST /api/jobs/{id}/autoselect` | – | `JobDetail` | **(added)** re-run `llm.select_tiles` against the current bank and overwrite the saved layout. Review page **"Re-pick tiles"** button. 400 `EMPTY_BANK` if the bank is empty. |
 | `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits |
 | `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF, uploads, inserts `generated_resumes` row |
 | `GET /api/jobs/recommended?limit=10` | – | `Job[]` | **(added)** global-pool jobs ranked by `fit`, excluding ones the user already saved. `created_at` = when the job entered the pool. Empty until embeddings exist. |
 | `DELETE /api/jobs/{id}` | – | `{ok: true}` | removes the user's `saved_jobs` row |
 
 ### 6.3 `POST /api/jobs` flow
-1. If the user already has a `saved_jobs` row for this URL's job **with a layout**, return its `JobDetail` as-is.
+1. If the user already has a `saved_jobs` row for this URL's job **with a layout**, return its `JobDetail` (re-picking tiles first if the layout is stale, as in `GET /api/jobs/{id}`).
 2. If the user has 0 tiles, return **400** `{"detail": {"code": "EMPTY_BANK"}}`.
 3. Get the job:
    - If the global `jobs` row exists with a `summary`, reuse it (no fetch or LLM call).
@@ -294,7 +311,7 @@ def fetch_job_text(url: str) -> str: ...
 
 # services/llm.py  (openai guy). Use OpenAI structured outputs (JSON schema / Pydantic).
 def extract_tiles(resume_text: str) -> list[dict]: ...
-    # -> [{"category": Category, "text": str}]  following §4.2
+    # -> [{"category": Category, "text": str, "data": dict}]  structured per §4.2; text = render_text(data)
 def summarize_job(job_text: str, url: str) -> dict: ...
     # -> {"title": str, "company": str, "summary": str, "bullets": list[str]}  (5–8 bullets)
 def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict: ...
@@ -314,9 +331,9 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 ```
 
 ### 7.1 LLM prompt guidance
-- **extract_tiles:** one tile per entry. Keep the original wording **verbatim** (whitespace cleanup only). Put each entry's heading line first and its bullets as `• ` lines. Split listed courses out of education into a `coursework` tile. One tile per skill line. Put awards, certifications, volunteering, etc. in `other`. Never invent content.
+- **extract_tiles:** structured output with one list per category (§4.2 fields). Copy fields **verbatim** (whitespace cleanup only); null when absent. **One entry per skill** (split comma lists; `group` = the resume's own label) and **one entry per course** (pulled out of education). Awards, certifications, volunteering, etc. go to `other`. Never invent content.
 - **summarize_job:** factual and concise; bullets = the most important requirements/responsibilities.
-- **select_tiles:** choose the most relevant tiles and order each section by relevance. Rough one-page budget: education ≤2, coursework ≤1, skills ≤4, experience ≤4, projects ≤3, other ≤2. **Only use IDs from the input.** Normally keep tiles in their bank category.
+- **select_tiles:** choose the most relevant tiles and order each section by relevance. Rough one-page budget: education ≤2, coursework ≤6 courses, skills ≤12 skills, experience ≤4, projects ≤3, other ≤2. Skills/courses are individual tiles, so pick the ones relevant to the job. **Only use IDs from the input.** Normally keep tiles in their bank category.
 - Model: env `OPENAI_MODEL`, default `gpt-5.6-luna` (structured outputs; no `temperature`, since gpt-5 models reject it).
 
 ---
@@ -522,4 +539,4 @@ Each person owns specific files. **Don't edit another person's files without ask
 | `localhost` vs `127.0.0.1` session split | Always use `localhost` for the website and in the extension |
 
 ## 15. Stretch goals (only after Checkpoint 2)
-Bullet rewriting tailored to the job · inline tile text edit · "Re-run auto-select" button on Review · delete job card · DOCX upload · popup shows "signed in as …" · AWS hosting.
+Bullet rewriting tailored to the job · inline tile text edit · ~~"Re-run auto-select" button on Review~~ (done) · delete job card · DOCX upload · popup shows "signed in as …" · AWS hosting.

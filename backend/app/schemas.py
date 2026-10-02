@@ -26,19 +26,22 @@ class ProfileUpdate(BaseModel):
 class Tile(BaseModel):
     id: str
     category: Category
-    text: str
+    text: str                      # display text; generated from `data` when data is present
+    data: dict | None = None       # structured fields per category (services/tile_data.py); null = freeform
     source_resume_id: str | None = None
     created_at: str
 
 
 class TileCreate(BaseModel):
     category: Category
-    text: str
+    text: str | None = None        # freeform tile ...
+    data: dict | None = None       # ... or structured (text is generated). One of the two is required.
 
 
 class TileUpdate(BaseModel):
     category: Category | None = None
-    text: str | None = None
+    text: str | None = None        # editing text alone makes the tile freeform (data -> null)
+    data: dict | None = None       # replaces data and regenerates text
 
 
 class Layout(BaseModel):

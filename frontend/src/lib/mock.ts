@@ -157,7 +157,7 @@ export const mockApi = {
     const created = blocks.length
       ? blocks.map((b) => tile("other", b))
       : SAMPLE_TILES.slice(0, 6).map(([c, t]) => tile(c, t)); // uploaded file: pretend we extracted these
-    state.tiles.push(...created);
+    state.tiles = created; // upload replaces the whole bank (matches backend)
     save();
     return { tiles: created };
   },
@@ -234,6 +234,14 @@ export const mockApi = {
     findJob(id).layout = layout;
     save();
     return { ok: true as const };
+  },
+  async autoselect(id: string) {
+    await delay(1500);
+    const job = findJob(id);
+    if (!state.tiles.length) throw new ApiError(400, { code: "EMPTY_BANK", message: "Your resume bank is empty." });
+    job.layout = autoSelect(`${job.summary ?? ""} ${job.bullets.join(" ")}`);
+    save();
+    return toDetail(job);
   },
   async generatePdf(id: string, layout: Layout): Promise<GeneratedPdf> {
     await delay(1500);

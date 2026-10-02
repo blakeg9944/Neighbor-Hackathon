@@ -49,15 +49,15 @@ def list_tiles(user_id: str = Depends(get_user_id)):
 
 @router.post("/tiles", response_model=Tile)
 def create_tile(body: TileCreate, background: BackgroundTasks, user_id: str = Depends(get_user_id)):
-    tile = bank_service.create_tile(user_id, body.category, body.text)
+    tile = bank_service.create_tile(user_id, body.category, text=body.text, data=body.data)
     background.add_task(bank_service.refresh_profile_embedding, user_id)
     return tile
 
 
 @router.patch("/tiles/{tile_id}", response_model=Tile)
 def update_tile(tile_id: str, body: TileUpdate, background: BackgroundTasks, user_id: str = Depends(get_user_id)):
-    tile = bank_service.update_tile(user_id, tile_id, category=body.category, text=body.text)
-    if body.text is not None:
+    tile = bank_service.update_tile(user_id, tile_id, category=body.category, text=body.text, data=body.data)
+    if body.text is not None or body.data is not None:
         background.add_task(bank_service.refresh_profile_embedding, user_id)
     return tile
 
@@ -95,6 +95,11 @@ def recommended_jobs(limit: int = 10, user_id: str = Depends(get_user_id)):
 @router.get("/jobs/{job_id}", response_model=JobDetail)
 def get_job(job_id: str, user_id: str = Depends(get_user_id)):
     return job_service.get_job(user_id, job_id)
+
+
+@router.post("/jobs/{job_id}/autoselect", response_model=JobDetail)
+def autoselect(job_id: str, user_id: str = Depends(get_user_id)):
+    return job_service.autoselect(user_id, job_id)
 
 
 @router.put("/jobs/{job_id}/layout", response_model=Ok)

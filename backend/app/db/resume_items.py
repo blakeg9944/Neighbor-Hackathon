@@ -1,34 +1,37 @@
-"""Resume tiles (DESIGN_SPEC §5): category lives in `section`, tile text in `content_text`.
-title/organization/start_date/end_date/content stay unused (null / {})."""
+"""Resume tiles (DESIGN_SPEC §5): category lives in `section`, display text in `content_text`,
+structured fields (services/tile_data.py) in `content` ({} for freeform tiles).
+title/organization/start_date/end_date stay unused (null)."""
 from typing import Literal
 
 from .client import first, supabase
 
 T = "resume_items"
-COLS = "id, section, content_text, source_resume_id, created_at"
+COLS = "id, section, content_text, content, source_resume_id, created_at"
 
 Section = Literal["education", "coursework", "skills", "experience", "projects", "other"]
 SECTIONS: tuple[str, ...] = Section.__args__  # also the fixed display order (§4.1)
 
 
-def _row(user_id: str, section: str, text: str, source_resume_id: str | None) -> dict:
+def _row(user_id: str, section: str, text: str, source_resume_id: str | None, data: dict | None = None) -> dict:
     # Every row gets every key: bulk inserts null out missing keys instead of using column defaults.
     return {
         "user_id": user_id,
         "source_resume_id": source_resume_id,
         "section": section if section in SECTIONS else "other",
         "content_text": text,
-        "content": {},
+        "content": data or {},
     }
 
 
-def create(user_id: str, section: str, text: str, source_resume_id: str | None = None) -> dict:
-    return supabase.table(T).insert(_row(user_id, section, text, source_resume_id)).execute().data[0]
+def create(user_id: str, section: str, text: str, source_resume_id: str | None = None,
+           data: dict | None = None) -> dict:
+    return supabase.table(T).insert(_row(user_id, section, text, source_resume_id, data)).execute().data[0]
 
 
 def create_many(user_id: str, tiles: list[dict], source_resume_id: str | None = None) -> list[dict]:
-    """tiles: [{"category", "text"}] (llm.extract_tiles output)."""
-    rows = [_row(user_id, t.get("category"), t.get("text") or "", source_resume_id) for t in tiles if t.get("text")]
+    """tiles: [{"category", "text", "data"?}] (llm.extract_tiles output)."""
+    rows = [_row(user_id, t.get("category"), t.get("text") or "", source_resume_id, t.get("data"))
+            for t in tiles if t.get("text")]
     if not rows:
         return []
     return supabase.table(T).insert(rows).execute().data
@@ -56,7 +59,7 @@ def all_text(user_id: str) -> str:
 
 
 def update(user_id: str, item_id: str, **fields) -> dict | None:
-    """e.g. update(uid, id, section="skills", content_text="...")"""
+    """e.g. update(uid, id, section="skills", content_text="...", content={...})"""
     return first(supabase.table(T).update(fields).eq("user_id", user_id).eq("id", item_id).execute().data)
 
 
