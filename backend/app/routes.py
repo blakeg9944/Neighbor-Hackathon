@@ -18,9 +18,10 @@ async def receive_url(payload: URLRequest):
 
     print(f"Received URL: {payload.url}")
 
-    # Example: Access DB session if needed
-    # new_item = Item(url=payload.url)
-    # db.add(new_item)
-    # await db.commit()
+    # Example: save to Supabase via the db layer (app/db/). Add
+    # `user_id: str = Depends(get_user_id)` (from app.auth) to the signature, then:
+    # from app.db import jobs
+    # job = jobs.create(user_id, description, url=payload.url)
+    # jobs.save(user_id, job["id"])
 
     return {"status": "success", "url": payload.url}
