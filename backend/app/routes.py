@@ -88,8 +88,8 @@ def list_jobs(user_id: str = Depends(get_user_id)):
 
 
 @router.get("/jobs/recommended", response_model=list[Job])  # before /jobs/{job_id} so it isn't captured
-def recommended_jobs(limit: int = 10, user_id: str = Depends(get_user_id)):
-    return job_service.recommended_jobs(user_id, limit)
+def recommended_jobs(limit: int = 10, include_saved: bool = False, user_id: str = Depends(get_user_id)):
+    return job_service.recommended_jobs(user_id, min(max(limit, 1), 50), include_saved)
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetail)

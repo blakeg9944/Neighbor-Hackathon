@@ -1,0 +1,42 @@
+# 20 KSL Jobs postings across fields (scraped 2026-10-02). Seed with: python seed_jobs.py ksl_jobs.txt
+
+# IT Software Developer II  (Information Technology)
+https://classifieds.ksl.com/listing/82234590
+# Inside Sales Rep / Weekly Pay + Love Your Job again!  (Sales)
+https://classifieds.ksl.com/listing/82061540
+# Associate Attorney (International)  (Legal)
+https://classifieds.ksl.com/listing/82129226
+# Executive Assistant-CFO/Legal  (Legal)
+https://classifieds.ksl.com/listing/82061211
+# Dental Hygienist  (Healthcare)
+https://classifieds.ksl.com/listing/82227260
+# Supportive Living Assistant  (Healthcare)
+https://classifieds.ksl.com/listing/82064823
+# Massage Therapist - Winter Seasonal  (Cosmetology & Beauty)
+https://classifieds.ksl.com/listing/82227770
+# Health Dept. Business Manager  (Business & Management)
+https://classifieds.ksl.com/listing/82065554
+# Solid Waste Director  (Government & Military)
+https://classifieds.ksl.com/listing/82065467
+# Production Supervisor  (Retail)
+https://classifieds.ksl.com/listing/82065191
+# Electrical Technician  (Construction & Skilled Trades)
+https://classifieds.ksl.com/listing/82061342
+# HVAC Installer  (Construction & Skilled Trades)
+https://classifieds.ksl.com/listing/82092717
+# Trimble GPS Field Technician  (Construction & Skilled Trades)
+https://classifieds.ksl.com/listing/82061157
+# Local Flatbed Driver - CDL  (Transportation & Logistics)
+https://classifieds.ksl.com/listing/82084806
+# PM Professional (Heavy Duty Preventive Maintenance)  (Automotive)
+https://classifieds.ksl.com/listing/82209407
+# Customer Service Representative  (Warehouse & Distribution)
+https://classifieds.ksl.com/listing/82084347
+# Forklift Operator/Porter  (Other)
+https://classifieds.ksl.com/listing/82064913
+# Host - Hostess  (Restaurant & Food Service)
+https://classifieds.ksl.com/listing/82065491
+# Part Time Custodian  (Janitorial & Housekeeping)
+https://classifieds.ksl.com/listing/82234599
+# Affordable Housing Case Manager  (Administrative)
+https://classifieds.ksl.com/listing/82065209

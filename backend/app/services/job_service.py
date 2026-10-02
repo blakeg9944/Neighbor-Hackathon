@@ -3,7 +3,7 @@ import uuid
 
 from ..db import generated_resumes, jobs, profiles, storage
 from . import llm, pdf
-from .bank_service import list_tiles
+from .bank_service import list_tiles, refresh_profile_embedding
 from .errors import AppError, not_found
 from .layout import normalize_layout, resolve_layout, section_texts
 from .scraper import fetch_job_text
@@ -160,9 +160,12 @@ def list_jobs(user_id: str) -> list[dict]:
     ]
 
 
-def recommended_jobs(user_id: str, limit: int = 10) -> list[dict]:
-    """Global-pool jobs ranked by fit, excluding ones already saved. Empty until embeddings exist."""
-    saved_ids = {j["id"] for j in jobs.list_saved(user_id)}
+def recommended_jobs(user_id: str, limit: int = 10, include_saved: bool = False) -> list[dict]:
+    """Global-pool jobs most similar to the user's whole-resume embedding, best fit first.
+    Excludes jobs already on the dashboard unless include_saved. Empty with no bank / no OpenAI key."""
+    if not profiles.has_embedding(user_id):
+        refresh_profile_embedding(user_id)  # bank predates embeddings or the background task failed
+    saved_ids = set() if include_saved else {j["id"] for j in jobs.list_saved(user_id)}
     matches = [m for m in jobs.match_for_user(user_id, limit=limit + len(saved_ids)) if m["id"] not in saved_ids]
     matches = matches[:limit]
     by_id = {j["id"]: j for j in jobs.get_many([m["id"] for m in matches])}

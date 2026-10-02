@@ -17,5 +17,10 @@ def update(user_id: str, **fields) -> dict | None:
 
 
 def set_embedding(user_id: str, embedding: list[float]) -> None:
-    """Unused for now (DESIGN_SPEC §2): whole-resume vector for match_jobs / job_fit."""
+    """Whole-resume vector for match_jobs / job_fit (fit scores, recommended jobs)."""
     supabase.table(T).update({"embedding": embedding}).eq("id", user_id).execute()
+
+
+def has_embedding(user_id: str) -> bool:
+    row = first(supabase.table(T).select("id").eq("id", user_id).not_.is_("embedding", "null").execute().data)
+    return row is not None

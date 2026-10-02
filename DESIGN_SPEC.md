@@ -281,7 +281,7 @@ interface JobDetail extends Job {
 | `POST /api/jobs/{id}/autoselect` | – | `JobDetail` | **(added)** re-run `llm.select_tiles` against the current bank and overwrite the saved layout. Review page **"Re-pick tiles"** button. 400 `EMPTY_BANK` if the bank is empty. |
 | `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits |
 | `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF, uploads, inserts `generated_resumes` row |
-| `GET /api/jobs/recommended?limit=10` | – | `Job[]` | **(added)** global-pool jobs ranked by `fit`, excluding ones the user already saved. `created_at` = when the job entered the pool. Empty until embeddings exist. |
+| `GET /api/jobs/recommended?limit=10&include_saved=false` | – | `Job[]` | **(added)** global-pool jobs most similar to the user's whole-resume embedding, ranked by `fit` (best first). Excludes jobs already on the dashboard unless `include_saved=true`. `limit` 1–50. `created_at` = when the job entered the pool. Embeds the profile on the fly if it was never embedded; empty with an empty bank or no OpenAI key. |
 | `DELETE /api/jobs/{id}` | – | `{ok: true}` | removes the user's `saved_jobs` row |
 
 ### 6.3 `POST /api/jobs` flow
