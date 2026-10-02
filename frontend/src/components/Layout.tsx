@@ -14,6 +14,7 @@ const titleFor = (path: string) =>
   path === "/" ? "Dashboard"
   : path.startsWith("/bank") ? "Your Resume"
   : path.startsWith("/opportunities") ? "Job Opportunities"
+  : path.startsWith("/profile") ? "Profile"
   : path.startsWith("/generate") ? "New Resume"
   : path.includes("/review") ? "Review"
   : "";
@@ -64,7 +65,13 @@ export default function Layout() {
         </nav>
         <div className="mt-auto border-t border-line px-4 py-3">
           {USE_MOCKS && <MonoLabel className="mb-2 block !text-accent">● Mock data</MonoLabel>}
-          <div className="flex items-center gap-2.5">
+          <NavLink
+            to="/profile"
+            title="Profile & application info"
+            className={({ isActive }) =>
+              `-mx-2 flex items-center gap-2.5 px-2 py-1.5 ${isActive ? "bg-raise" : "hover:bg-hover"}`
+            }
+          >
             {user?.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="h-7 w-7 border border-line" />
             ) : (
@@ -76,7 +83,8 @@ export default function Layout() {
               <div className="truncate">{user?.name ?? "Signed in"}</div>
               <div className="truncate text-xs text-muted">{user?.email}</div>
             </div>
-          </div>
+            <span className="text-muted">›</span>
+          </NavLink>
           <button onClick={signOut} className="mt-2 text-xs text-muted hover:text-ink">
             Sign out
           </button>

@@ -1,7 +1,7 @@
 from .client import first, supabase
 
 T = "profiles"
-COLS = "id, full_name, email, phone, location, links"
+COLS = "id, full_name, email, phone, location, links, application"
 
 
 def get(user_id: str) -> dict | None:

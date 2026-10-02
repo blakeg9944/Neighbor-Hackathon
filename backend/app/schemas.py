@@ -7,6 +7,47 @@ Category = Literal["education", "coursework", "skills", "experience", "projects"
 CATEGORIES: tuple[str, ...] = Category.__args__
 
 
+YesNo = Literal["yes", "no"]
+Decline = Literal["decline"]  # "I don't wish to answer"
+
+
+class ApplicationInfo(BaseModel):
+    """Answers to the generic questions on most job applications (auto-apply). Every field optional;
+    null = not answered. Stored in profiles.application (jsonb). Mirror: ApplicationInfo in types.ts."""
+    # links
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    portfolio_url: str | None = None
+    # address (profiles.location stays the free-text "City, ST" for the resume header)
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    # education
+    school: str | None = None
+    degree: str | None = None              # e.g. "Bachelor of Science"
+    major: str | None = None
+    graduation_date: str | None = None     # "YYYY-MM"
+    gpa: str | None = None
+    # work eligibility / logistics
+    authorized_to_work_us: YesNo | None = None
+    requires_sponsorship: YesNo | None = None
+    over_18: YesNo | None = None
+    willing_to_relocate: YesNo | None = None
+    earliest_start_date: str | None = None  # "YYYY-MM-DD"
+    desired_salary: str | None = None
+    # voluntary self-identification (EEO); "decline" = chose not to answer
+    pronouns: str | None = None
+    gender: Literal["male", "female", "non_binary", "decline"] | None = None
+    hispanic_latino: YesNo | Decline | None = None
+    race: list[Literal[
+        "american_indian_alaska_native", "asian", "black_african_american",
+        "native_hawaiian_pacific_islander", "white", "two_or_more", "decline",
+    ]] = []
+    veteran_status: Literal["not_veteran", "protected_veteran", "veteran", "decline"] | None = None
+    disability_status: YesNo | Decline | None = None
+
+
 class Profile(BaseModel):
     id: str
     full_name: str | None = None
@@ -14,6 +55,7 @@ class Profile(BaseModel):
     phone: str | None = None
     location: str | None = None
     links: list[str] = []
+    application: ApplicationInfo = ApplicationInfo()
 
 
 class ProfileUpdate(BaseModel):
@@ -21,6 +63,7 @@ class ProfileUpdate(BaseModel):
     phone: str | None = None
     location: str | None = None
     links: list[str] | None = None
+    application: ApplicationInfo | None = None  # replaces the whole object
 
 
 class Tile(BaseModel):
@@ -86,6 +129,22 @@ class JobDetail(Job):
 class JobCreate(BaseModel):
     url: str
     description: str | None = None
+
+
+class FieldDescriptor(BaseModel):
+    field_id: str
+    label: str
+    type: str
+    options: list[str] = []
+    multiple: bool = False  # select/multiselect fields where more than one option may be chosen
+
+
+class AutofillFieldsRequest(BaseModel):
+    fields: list[FieldDescriptor]
+
+
+class AutofillMappingResult(BaseModel):
+    mapping: dict[str, str]
 
 
 class TilesOut(BaseModel):
