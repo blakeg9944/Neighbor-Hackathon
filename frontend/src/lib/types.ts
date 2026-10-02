@@ -1,5 +1,7 @@
 // Mirrors DESIGN_SPEC §6.1 and backend/app/schemas.py. Change both together.
 
+export type TemplateId = "classic" | "modern" | "compact";
+
 export type Category = "education" | "coursework" | "skills" | "experience" | "projects" | "other";
 
 export const CATEGORY_ORDER: Category[] = ["education", "coursework", "skills", "experience", "projects", "other"];
@@ -33,6 +35,16 @@ export interface Tile {
   created_at: string;
 }
 
+/** One requirement/qualification from the job posting (left pane of the editor). */
+export interface Requirement {
+  id: string; // "r1", "r2", ...
+  text: string;
+  kind: "required" | "preferred";
+}
+
+/** Requirement id -> ids of bank tiles that demonstrate it (computed by the AI when entries are picked). */
+export type Matches = Record<string, string[]>;
+
 /** Tile id -> text edited for ONE resume only. The bank tile keeps its own text. */
 export type Overrides = Record<string, string>;
 
@@ -40,12 +52,20 @@ export interface Layout {
   sections: Record<Category, string[]>;
   unused: string[];
   overrides?: Overrides;
+  order?: Category[]; // section order for this resume (missing categories fall back to CATEGORY_ORDER)
+  matches?: Matches; // omit to keep the saved matches
+  template?: TemplateId;
+  labels?: Partial<Record<Category, string>>; // per-resume section names
 }
 
 export interface ResolvedLayout {
   sections: Record<Category, Tile[]>; // tiles carry their bank text; apply `overrides` for display
   unused: Tile[];
   overrides?: Overrides;
+  order?: Category[];
+  matches?: Matches;
+  template?: TemplateId;
+  labels?: Partial<Record<Category, string>>;
 }
 
 export interface Job {
@@ -57,6 +77,7 @@ export interface Job {
   bullets: string[];
   created_at: string;
   fit?: number | null; // calibrated resume-vs-job match, 0..1 (show as %); null until both are embedded
+  requirements?: Requirement[]; // empty for jobs not analyzed yet (Re-pick analyzes them)
 }
 
 export interface JobListItem extends Job {
@@ -80,8 +101,18 @@ export const emptySections = <T,>(): Record<Category, T[]> =>
 
 export const toLayout = (resolved: ResolvedLayout): Layout => ({
   overrides: resolved.overrides ?? {},
+  order: normalizeOrder(resolved.order),
+  matches: resolved.matches ?? {},
+  template: resolved.template,
+  labels: resolved.labels ?? {},
   sections: Object.fromEntries(
     CATEGORY_ORDER.map((c) => [c, resolved.sections[c].map((t) => t.id)]),
   ) as Record<Category, string[]>,
   unused: resolved.unused.map((t) => t.id),
 });
+
+/** Valid, de-duplicated section order with any missing categories appended in default order. */
+export const normalizeOrder = (order?: Category[] | null): Category[] => {
+  const kept = [...new Set((order ?? []).filter((c) => CATEGORY_ORDER.includes(c)))];
+  return [...kept, ...CATEGORY_ORDER.filter((c) => !kept.includes(c))];
+};

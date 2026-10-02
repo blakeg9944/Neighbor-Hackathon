@@ -142,11 +142,21 @@ def _clean_line(line: str) -> str:
 # ---------------------------------------------------------------------------
 # summarize_job
 # ---------------------------------------------------------------------------
+class _ReqOut(BaseModel):
+    text: str = Field(description="one requirement, short (under ~15 words)")
+    kind: Literal["required", "preferred"]
+
+
 class _JobOut(BaseModel):
     title: str
     company: str
     summary: str = Field(description="2-3 sentence factual overview of the role")
     bullets: list[str] = Field(description="5-8 most important requirements/responsibilities")
+    requirements: list[_ReqOut] = Field(description="every distinct requirement/qualification in the posting")
+
+
+class _ReqsOut(BaseModel):
+    requirements: list[_ReqOut]
 
 
 SUMMARIZE_INSTRUCTIONS = """You read a job posting (possibly scraped page text with navigation noise) and extract:
@@ -154,15 +164,44 @@ SUMMARIZE_INSTRUCTIONS = """You read a job posting (possibly scraped page text w
 - company: the hiring company
 - summary: 2-3 factual, concise sentences about the role
 - bullets: the 5-8 most important requirements and responsibilities, each short (under ~15 words)
+- requirements: EVERY distinct requirement or qualification the posting asks for (skills, technologies,
+  experience, education, soft skills), usually 8-15. One idea each, short (under ~15 words), no duplicates.
+  kind = "preferred" for nice-to-haves ("preferred", "bonus", "a plus"), else "required".
 Use only information in the posting. If the company isn't stated, infer it from the URL."""
+
+REQUIREMENTS_INSTRUCTIONS = """You read a job posting (possibly scraped page text with navigation noise) and list
+EVERY distinct requirement or qualification it asks for (skills, technologies, experience, education, soft skills),
+usually 8-15. One idea each, short (under ~15 words), no duplicates. kind = "preferred" for nice-to-haves
+("preferred", "bonus", "a plus"), else "required". Use only information in the posting."""
+
+
+def _number_reqs(reqs) -> list[dict]:
+    """[_ReqOut | dict] -> [{"id": "r1", "text", "kind"}], dropping blanks and duplicates."""
+    out, seen = [], set()
+    for r in reqs:
+        text = (r.text if hasattr(r, "text") else r.get("text") or "").strip()
+        kind = r.kind if hasattr(r, "kind") else r.get("kind", "required")
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            out.append({"id": f"r{len(out) + 1}", "text": text, "kind": kind if kind == "preferred" else "required"})
+    return out
+
+
+def extract_requirements(job_text: str) -> list[dict]:
+    """-> [{"id": "r1", "text", "kind": "required"|"preferred"}] for jobs summarized before requirements existed."""
+    if USE_STUBS or not job_text.strip():
+        return [dict(r) for r in _STUB_REQS]
+    out = _parse(REQUIREMENTS_INSTRUCTIONS, job_text[:12000], _ReqsOut)
+    return _number_reqs(out.requirements)
 
 
 def summarize_job(job_text: str, url: str) -> dict:
-    """-> {"title", "company", "summary", "bullets": list[str] (5–8)}"""
+    """-> {"title", "company", "summary", "bullets": list[str] (5–8), "requirements": [{"id","text","kind"}]}"""
     if USE_STUBS:
-        return json.loads(json.dumps(_STUB_JOB))
+        return json.loads(json.dumps({**_STUB_JOB, "requirements": _STUB_REQS}))
     out = _parse(SUMMARIZE_INSTRUCTIONS, f"URL: {url}\n\nPOSTING:\n{job_text}", _JobOut)
-    return {"title": out.title, "company": out.company, "summary": out.summary, "bullets": out.bullets[:8]}
+    return {"title": out.title, "company": out.company, "summary": out.summary, "bullets": out.bullets[:8],
+            "requirements": _number_reqs(out.requirements)}
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +216,14 @@ class _SectionsOut(BaseModel):
     other: list[str]
 
 
+class _MatchOut(BaseModel):
+    requirement: str = Field(description='requirement key, e.g. "r3"')
+    tiles: list[str] = Field(description="keys of ALL candidate tiles that give concrete evidence for it")
+
+
 class _LayoutOut(BaseModel):
     sections: _SectionsOut
+    matches: list[_MatchOut]
 
 
 SELECT_INSTRUCTIONS = f"""You tailor a one-page resume to a job by SELECTING and ORDERING the candidate's tiles.
@@ -191,7 +236,11 @@ Return, for each of the 6 sections, the keys of the tiles to include, ordered mo
 - Prefer tiles whose skills/experience match the job's requirements. Always include education if any exists.
 - Skills and coursework tiles are ONE skill / ONE course each: pick the individual skills and courses that
   matter for this job (most relevant first) and skip unrelated ones.
-- Leave out weak or irrelevant tiles; anything not selected goes to "unused" automatically."""
+- Leave out weak or irrelevant tiles; anything not selected goes to "unused" automatically.
+
+Also return "matches": for EACH requirement key (r1, r2, ...), the keys of ALL candidate tiles (selected or not)
+that give concrete evidence the candidate meets it. Be strict: a tile counts only if its text clearly shows that
+skill/experience/qualification. Use an empty list when nothing matches."""
 
 
 def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict:
@@ -200,14 +249,17 @@ def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict:
     The LLM sees short keys (t1, t2, ...) instead of UUIDs so it can't garble IDs; we map them back.
     Unknown keys are dropped; the caller (routes) validates the final layout anyway.
     """
+    requirements = job.get("requirements") or []
     if USE_STUBS or not tiles:
-        return _budget_layout(tiles)
+        return {**_budget_layout(tiles), "matches": keyword_matches(requirements, tiles)}
 
     key_to_id = {f"t{i}": t["id"] for i, t in enumerate(tiles, 1)}
     listing = "\n\n".join(f"[{k}] ({_tile_label(t)})\n{t['text']}" for k, t in zip(key_to_id, tiles))
     job_info = {k: job.get(k) for k in ("title", "company", "summary", "bullets")}
+    req_listing = "\n".join(f"[{r['id']}] ({r.get('kind', 'required')}) {r['text']}" for r in requirements)
     user_input = (
         f"JOB:\n{json.dumps(job_info, indent=1)}\n\nPOSTING TEXT (truncated):\n{(job_text or '')[:6000]}"
+        f"\n\nREQUIREMENTS:\n{req_listing or '(none)'}"
         f"\n\nCANDIDATE TILES:\n{listing}"
     )
     out = _parse(SELECT_INSTRUCTIONS, user_input, _LayoutOut)
@@ -223,7 +275,38 @@ def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict:
                 used.add(tid)
         sections[cat] = ids
     unused = [t["id"] for t in tiles if t["id"] not in used]
-    return {"sections": sections, "unused": unused}
+
+    valid_reqs = {r["id"] for r in requirements}
+    matches: dict[str, list[str]] = {}
+    for m in out.matches:
+        rid = m.requirement.strip().strip("[]")
+        if rid in valid_reqs:
+            ids = [key_to_id[k.strip().strip("[]")] for k in m.tiles if k.strip().strip("[]") in key_to_id]
+            matches[rid] = list(dict.fromkeys(matches.get(rid, []) + ids))
+    return {"sections": sections, "unused": unused, "matches": matches}
+
+
+_STOP = set("""the and for with you your our are will have has this that from into able ability about across
+experience experienced years year plus strong knowledge understanding working work using use including such
+or of in to a an on as at by be is it we they their other related relevant skills skill etc least preferred
+required bonus nice familiarity familiar proficiency proficient degree equivalent""".split())
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9+#.]{2,}", text.lower().replace("/", " ")) if w not in _STOP}
+
+
+def keyword_matches(requirements: list[dict], tiles: list[dict]) -> dict[str, list[str]]:
+    """No-AI fallback: a tile matches a requirement when they share a distinctive word
+    (any shared word for short skill/course tiles, two or more for longer entries)."""
+    out: dict[str, list[str]] = {}
+    tile_words = [(t["id"], _words(t.get("text") or ""), len((t.get("text") or "").split())) for t in tiles]
+    for r in requirements:
+        rw = _words(r.get("text") or "")
+        ids = [tid for tid, tw, n in tile_words if len(rw & tw) >= (1 if n <= 4 else 2)]
+        if ids:
+            out[r["id"]] = ids
+    return out
 
 
 def _tile_label(t: dict) -> str:
@@ -276,6 +359,18 @@ _STUB_TILES = [
     _stub("other", title="Dean's List", organization=None, date="6 semesters", kind="award", bullets=[]),
     _stub("other", title="Volunteer Math Tutor", organization="Lincoln High School", date="2022 – Present",
           kind="volunteer", bullets=[]),
+]
+
+_STUB_REQS = [
+    {"id": "r1", "text": "Build backend services in Python", "kind": "required"},
+    {"id": "r2", "text": "Experience with Go", "kind": "required"},
+    {"id": "r3", "text": "SQL databases such as PostgreSQL", "kind": "required"},
+    {"id": "r4", "text": "Caching with Redis", "kind": "required"},
+    {"id": "r5", "text": "Data pipelines processing millions of events (Kafka)", "kind": "required"},
+    {"id": "r6", "text": "AWS and Docker deployments", "kind": "required"},
+    {"id": "r7", "text": "Write tests and take part in code review", "kind": "required"},
+    {"id": "r8", "text": "B.S. in Computer Science or equivalent", "kind": "required"},
+    {"id": "r9", "text": "Kubernetes experience", "kind": "preferred"},
 ]
 
 _STUB_JOB = {

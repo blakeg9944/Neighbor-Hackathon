@@ -1,0 +1,68 @@
+{
+  "_comment": "Single source of truth for resume PDF styling. Read by backend/app/services/pdf.py (ReportLab) and frontend/src/lib/templates.ts (live preview). Sizes are points; margins are inches; `f` (fit factor) scales every size and gap but not margins.",
+  "default": "classic",
+  "fit": {
+    "min": 0.86,
+    "max": 1.12,
+    "short_below": 0.82
+  },
+  "templates": {
+    "classic": {
+      "label": "Classic",
+      "pdf_font": "CrimsonText",
+      "css_font": "'Crimson Text', Georgia, 'Times New Roman', serif",
+      "files": {
+        "regular": "CrimsonText-Regular.ttf",
+        "bold": "CrimsonText-Bold.ttf",
+        "italic": "CrimsonText-Italic.ttf",
+        "boldItalic": "CrimsonText-BoldItalic.ttf"
+      },
+      "margins": { "x": 0.65, "y": 0.55 },
+      "base_size": 11.5,
+      "leading": 13.6,
+      "entry_gap": 5,
+      "bullet_indent": 13,
+      "name": { "size": 24, "align": "center", "color": "#000000" },
+      "contact": { "size": 10.5, "align": "center", "space_after": 4 },
+      "section": { "size": 12, "caps": true, "tracking": 1.4, "color": "#000000", "rule": 0.7, "space_before": 9, "space_after": 3.5 }
+    },
+    "modern": {
+      "label": "Modern",
+      "pdf_font": "Lato",
+      "css_font": "'Lato', Helvetica, Arial, sans-serif",
+      "files": {
+        "regular": "Lato-Regular.ttf",
+        "bold": "Lato-Bold.ttf",
+        "italic": "Lato-Italic.ttf",
+        "boldItalic": "Lato-BoldItalic.ttf"
+      },
+      "margins": { "x": 0.6, "y": 0.5 },
+      "base_size": 10,
+      "leading": 12.8,
+      "entry_gap": 5,
+      "bullet_indent": 12,
+      "name": { "size": 26, "align": "left", "color": "#1f3a5f" },
+      "contact": { "size": 9.5, "align": "left", "space_after": 6 },
+      "section": { "size": 10.5, "caps": true, "tracking": 1.6, "color": "#1f3a5f", "rule": 0.9, "space_before": 10, "space_after": 4 }
+    },
+    "compact": {
+      "label": "Compact",
+      "pdf_font": "Lato",
+      "css_font": "'Lato', Helvetica, Arial, sans-serif",
+      "files": {
+        "regular": "Lato-Regular.ttf",
+        "bold": "Lato-Bold.ttf",
+        "italic": "Lato-Italic.ttf",
+        "boldItalic": "Lato-BoldItalic.ttf"
+      },
+      "margins": { "x": 0.5, "y": 0.45 },
+      "base_size": 9.5,
+      "leading": 11.4,
+      "entry_gap": 3,
+      "bullet_indent": 11,
+      "name": { "size": 18, "align": "center", "color": "#000000" },
+      "contact": { "size": 9, "align": "center", "space_after": 3 },
+      "section": { "size": 10, "caps": true, "tracking": 0.8, "color": "#000000", "rule": 0.5, "space_before": 6, "space_after": 2.5 }
+    }
+  }
+}

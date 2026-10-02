@@ -155,6 +155,20 @@ An override changes that entry's text **for this resume only** (Review page ✎)
 overridden entry renders as freeform text in the PDF. Edits made in the **Resume Bank** are permanent (`PATCH /api/tiles/{id}`)
 and show up in every resume that doesn't override that entry. Re-pick (`/autoselect`) replaces the layout and drops overrides.
 
+**Requirement matches (`matches`).** A layout carries `"matches": {"r1": [tileId, ...], ...}`: for each job
+requirement, the bank tiles (placed or unused) that demonstrate it. The AI returns them with the selection
+(`llm.select_tiles`); without an API key, or if that call fails, `llm.keyword_matches` is used instead. The editor counts a requirement as **matched**
+when at least one of its tiles is in a section of this resume. Clients may omit `matches` on save; the backend then
+keeps the saved ones. Re-pick recomputes them.
+
+**Template and section names (`template`, `labels`).** A layout carries `"template": "classic" | "modern" | "compact"`
+(styles in `shared/resume_templates.json`; default `classic`) and `"labels": {"experience": "Professional Experience", ...}`,
+this resume's section names (missing = default name; names equal to the default are dropped; max 40 chars).
+
+**Section order (`order`).** A layout may carry `"order": [Category, ...]`, this resume's section order (Review page:
+drag a section header's ⠿). The backend normalizes it to a full permutation of the 6 categories (unknown/duplicate
+entries dropped, missing ones appended in default order); the PDF prints sections in that order. Re-pick resets it.
+
 On **read**, the backend returns a `ResolvedLayout`, which has the same shape but full `Tile` objects instead of IDs, and:
 - drops IDs of tiles that no longer exist (e.g. deleted from the bank)
 - appends to `unused` any bank tiles that are missing from the layout (e.g. added after the layout was made)
@@ -245,17 +259,29 @@ interface Layout {                       // write form
   sections: Record<Category, string[]>;  // tile IDs, ordered
   unused: string[];
   overrides?: Record<string, string>;    // tile id -> text edited for THIS resume only (§4.3)
+  order?: Category[];                    // section order for THIS resume (§4.3)
+  matches?: Record<string, string[]>;    // requirement id -> tile ids (§4.3); omit to keep the saved ones
+  template?: "classic" | "modern" | "compact";   // PDF template (§4.3, §7.2)
+  labels?: Partial<Record<Category, string>>;    // section names for THIS resume (§4.3)
 }
 interface ResolvedLayout {               // read form
   sections: Record<Category, Tile[]>;
   unused: Tile[];
   overrides?: Record<string, string>;    // tiles keep their bank text; apply overrides for display
+  order: Category[];                     // always a full permutation of the 6 categories
+  matches: Record<string, string[]>;     // requirement id -> tile ids (§4.3)
+  template: "classic" | "modern" | "compact";
+  labels: Partial<Record<Category, string>>;
 }
 
 interface Job {                          // DB: jobs (+ saved_jobs.created_at as created_at)
   id: string; url: string; title: string | null; company: string | null;
   summary: string | null; bullets: string[]; created_at: string;
   fit: number | null;                    // calibrated resume-vs-job match 0..1 (show as %); null until both are embedded
+  requirements: Requirement[];           // every requirement in the posting; [] until analyzed (Re-pick analyzes)
+}
+interface Requirement {                  // stored in jobs.qualifications = {"requirements": [...]} (no migration)
+  id: string; text: string; kind: "required" | "preferred";   // id: "r1", "r2", ...
 }
 interface JobListItem extends Job {
   pdf_count: number; latest_pdf_at: string | null;
@@ -285,9 +311,9 @@ interface JobDetail extends Job {
 | `POST /api/url` | `{url: string, description?: string}` | `JobDetail` | Authenticated alias of `/api/jobs` for URLs originating from the extension; website login runs first if needed. |
 | `GET /api/jobs` | – | `JobListItem[]` | the user's saved jobs, newest first |
 | `GET /api/jobs/{id}` | – | `JobDetail` | 404 if the user has no `saved_jobs` row for it. If the saved layout places **none** of the current bank tiles (bank was replaced by a new upload), tiles are re-picked automatically (slow, one LLM call). |
-| `POST /api/jobs/{id}/autoselect` | – | `JobDetail` | **(added)** re-run `llm.select_tiles` against the current bank and overwrite the saved layout. Review page **"Re-pick tiles"** button. 400 `EMPTY_BANK` if the bank is empty. |
-| `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits (order, sections, Unused and per-resume `overrides`) |
-| `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF (overrides applied), uploads, inserts `generated_resumes` row |
+| `POST /api/jobs/{id}/autoselect` | – | `JobDetail` | **(added)** re-run `llm.select_tiles` against the current bank and overwrite the saved layout (incl. matches). Jobs saved before requirements existed get them extracted first (`llm.extract_requirements`). Review page **"Re-pick tiles"** button. 400 `EMPTY_BANK` if the bank is empty. |
+| `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits (row order, sections, Unused, per-resume `overrides` and section `order`) |
+| `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF (overrides and section order applied), uploads, inserts `generated_resumes` row |
 | `GET /api/jobs/recommended?limit=10&offset=0&include_saved=false` | – | `Job[]` | **(added)** global-pool jobs most similar to the user's whole-resume embedding, ranked by `fit` (best first). Excludes jobs already on the dashboard unless `include_saved=true`. `limit` 1–50; page with `offset` (ask for `limit + 1` to know if there's a next page). `created_at` = when the job entered the pool. Embeds the profile on the fly if it was never embedded; empty with an empty bank or no OpenAI key. |
 | `DELETE /api/jobs/{id}` | – | `{ok: true}` | removes the user's `saved_jobs` row |
 
@@ -320,15 +346,22 @@ def fetch_job_text(url: str) -> str: ...
 def extract_tiles(resume_text: str) -> list[dict]: ...
     # -> [{"category": Category, "text": str, "data": dict}]  structured per §4.2; text = render_text(data)
 def summarize_job(job_text: str, url: str) -> dict: ...
-    # -> {"title": str, "company": str, "summary": str, "bullets": list[str]}  (5–8 bullets)
+    # -> {"title", "company", "summary", "bullets": list[str] (5–8),
+    #     "requirements": [{"id": "r1", "text", "kind": "required"|"preferred"}]}  (every requirement, ~8–15)
+def extract_requirements(job_text: str) -> list[dict]: ...   # requirements only, for older jobs
 def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict: ...
-    # tiles: [{"id","category","text"}] -> Layout dict {"sections": {...6 keys...}, "unused": [...]}
+    # tiles: [{"id","category","text","data"}]; job["requirements"] -> Layout dict
+    #   {"sections": {...6 keys...}, "unused": [...], "matches": {"r1": [tile ids], ...}}
+def keyword_matches(requirements: list[dict], tiles: list[dict]) -> dict: ...   # no-AI fallback for matches
 def embed(text: str) -> list[float] | None: ...
     # text-embedding-3-small (1536 dims); None when OPENAI_API_KEY is unset (stub mode)
 
 # services/pdf.py  (openai guy)
 def pdf_to_text(data: bytes) -> str: ...            # pypdf, join page texts
-def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
+def render_resume(profile: dict, sections: dict[str, list], template: str | None = None,
+                  labels: dict[str, str] | None = None, meta: dict | None = None) -> bytes: ...
+    # sections: category -> entries in PRINT order (layout.section_entries). An entry is freeform text (str)
+    # or {"category", "data"} for structured tiles. See §7.2.
     # sections: category -> ordered list of tile TEXTS (already resolved), in §4.1 order.
     # Header: full_name (large), then "email | phone | location | links" line.
     # Each non-empty section: label heading + thin rule, then tiles per §4.2
@@ -336,6 +369,22 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 
 # main.py, routes.py (or routes/), schemas.py, db/  (database guy)
 ```
+
+### 7.2 PDF output
+- **Templates** live in `shared/resume_templates.json` (fonts, sizes, margins, section style, fit limits). Both
+  `services/pdf.py` and the editor's live preview (`frontend/src/lib/templates.ts`) read it, so they can't drift.
+  Fonts are bundled in `backend/app/fonts/` (Crimson Text for Classic, Lato for Modern/Compact; SIL OFL) and loaded
+  from Google Fonts in the browser.
+- **Structured entries** (tiles with `data`): bold title with right-aligned dates, italic organization/degree with
+  right-aligned location; projects show `Name · tech` and a clickable link. Freeform tiles (hand-written, or edited
+  per resume) keep the §4.2 heading + bullets layout. Date ranges use en dashes. Composition is mirrored in
+  `pdf.entry_parts` and `frontend/src/lib/preview.ts entryParts`: change both together.
+- **Auto-fit:** text and spacing scale by `f` in [`fit.min`, `fit.max`] to the largest size that fits one page.
+  If it doesn't fit at `fit.min`, the PDF runs to page 2 and the editor warns "too long"; if the page is under
+  `fit.short_below` full even at `fit.max`, the editor warns "short".
+- **Header:** name, then `email · phone · location · links` (email and links clickable). **Metadata:** title,
+  author, subject ("Resume for <job> at <company>"), creator.
+- Headings stay with their first entry; entries are kept together across page breaks.
 
 ### 7.1 LLM prompt guidance
 - **extract_tiles:** structured output with one list per category (§4.2 fields). Copy fields **verbatim** (whitespace cleanup only); null when absent. **One entry per skill** (split comma lists; `group` = the resume's own label) and **one entry per course** (pulled out of education). Awards, certifications, volunteering, etc. go to `other`. Never invent content.
@@ -355,7 +404,7 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 | `/bank` | **Your Resume** (UI name for the resume bank; code and this spec still say "bank"): upload/paste resume, tile list, add-tile form, profile/contact form | required |
 | `/opportunities` | **Job Opportunities** *(added)*: the 10 global-pool jobs closest to the user's bank (`GET /api/jobs/recommended`), dashboard-style table with fit bars; a row opens the summary, and "Tailor resume" goes to `/generate?url=`. | required |
 | `/generate?url=` | **Generate**: if `url` is present, auto-start `POST /api/jobs`; shows progress, the paste fallback, and errors | required |
-| `/jobs/:id/review` | **Review/Edit**: 6 category sections + right "Unused" sidebar, drag and drop, Generate PDF, PDF preview + download | required |
+| `/jobs/:id/review` | **Resume editor**: three resizable, toggleable panes: Job Description Points · Editor · Live preview (§8.2) | required |
 
 **Auth guard:** wait for the initial `getSession()` before deciding. If signed out, redirect to `/login?next=<encoded current path+query>`. Google OAuth `redirectTo` = `window.location.origin + next`, so the extension's `?url=` **survives login**. (Update `signInWithGoogle` in `src/lib/supabase.ts` to accept `next`.)
 
@@ -374,18 +423,18 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 - `EMPTY_BANK`: show a link to `/bank`.
 - On success, `navigate('/jobs/:id/review')`.
 
-**Review (`/jobs/:id/review`)**
-- Loads `GET /api/jobs/:id`. Main area: 6 section containers in fixed order. Right sidebar: **Unused**.
-- `@dnd-kit` multi-container sortable: drag between sections and the sidebar, and reorder within each.
-- X on a tile **moves it to Unused** (this resume only; the bank is untouched).
-- ✎ on a tile edits its text **for this resume only** (stored in `layout.overrides`, saved with Save / Generate PDF). Edited rows show "Edited for this resume" and a **Revert to bank** link. Dragging is disabled while a row is being edited.
-- Buttons: **Save** (`PUT …/layout`) and **Generate PDF** (`POST …/pdfs`). After generating, show the PDF in an `<iframe>` modal with a **Download** button.
-- Header: job title/company + link to the posting.
+**Resume editor (`/jobs/:id/review`)**
+- Header: job title/company, pane toggles (**Job points · Editor · Preview**; at least one stays open), Saved/Unsaved, **Re-pick**, **Save**, **PDFs · n ▾** (history, newest first, latest marked, View/Download) and **Generate PDF** (opens the new PDF in a modal).
+- Three side-by-side panes (`react-resizable-panels`): drag the separators to resize. Open panes and sizes are remembered per browser. The main nav starts collapsed to an icon rail on this page.
+- **Job Description Points (left):** job title, summary (More/Less), posting link; "N of M matched" bar; **Matched** (an entry on this resume covers it) and **Unmatched** lists. Hovering a point highlights its entries in the editor and the preview; clicking scrolls to them (opening the Unused tray if needed). Unmatched points show "N in Unused" when an unused entry would cover them. Jobs without requirements show "Analyze & re-pick".
+- **Editor (middle):** sections in this resume's order (drag a section header's ⠿ to reorder; sections collapse while dragging), rows drag within/between sections, ✎ edits for this resume only (`layout.overrides`, "Edited for this resume" + Revert to original), ✕ moves to **Unused**, a collapsible tray pinned to the bottom of the pane (auto-opens when a row is dragged onto it).
+- **Preview (right):** instant HTML look-alike of the PDF using the same template file, fonts and auto-fit as `services/pdf.py` (§7.2). **Template buttons** (Classic · Modern · Compact) under the pane header, saved per resume. Status: "1 page · text N%" (scale chosen by auto-fit), "Short · fills N%", or "X pages · too long" with a dashed "page 1 ends here" line. Paper is always white.
+- **Section names:** hover a section header in the editor and click ✎ to rename it for this resume (↺ resets). Shown in the editor, preview and PDF; saved as `layout.labels`.
 
 **Dashboard (`/`)**
 - "Tailor a resume" URL input, which navigates to `/generate?url=…`.
 - Table of jobs (`GET /api/jobs`), most recent first: role, company, fit (when available), PDF count, last generated, status.
-- **Clicking a row opens `/jobs/:id/review` directly** (no popup). The job overview (summary, key requirements, posting link) and PDF history move onto the edit page as part of its redesign (TBD).
+- **Clicking a row opens `/jobs/:id/review` directly** (no popup). The job overview, requirements and PDF history live on the editor page (§8.2).
 
 ### 8.3 Frontend structure
 ```
@@ -412,7 +461,7 @@ frontend/src/
 
 ### 8.5 Visual design
 Mockup: `design/mockups/6-hybrid.html` (kept local, gitignored). Rules for any new UI:
-- **Layout:** left sidebar (New resume, Workspace nav, account) · main column framed by hatched gutters · optional right **Panel** toggled from the top bar (contents TBD; not shown on the home/Dashboard page). The dashboard lists jobs most-recent-first; there is no "Recent" list in the sidebar.
+- **Layout:** left sidebar (New resume, Workspace nav, account; collapsible to an icon rail with « / », remembered separately for the editor, where it starts collapsed) · main column framed by hatched gutters · **no right-hand panel** (removed). The dashboard lists jobs most-recent-first; there is no "Recent" list in the sidebar.
 - **Lists, not cards:** rows separated by 1px hairlines, mono row numbers (`01`), grouped under `GroupHeader` bands (`EDUCATION · 1`). **Square corners everywhere** (no `rounded-*` except status dots).
 - **Type:** Geist (UI) + Geist Mono (labels, numbers, timestamps). Small uppercase labels use the `label-mono` utility.
 - **Color tokens** (`src/index.css`; use Tailwind classes like `bg-bg text-ink border-line text-accent`, never raw colors). Light or dark **follows the browser/OS setting** (`prefers-color-scheme`); there is no in-app toggle.

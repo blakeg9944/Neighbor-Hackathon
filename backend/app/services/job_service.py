@@ -5,7 +5,7 @@ from ..db import generated_resumes, jobs, profiles, storage
 from . import llm, pdf
 from .bank_service import list_tiles, refresh_profile_embedding
 from .errors import AppError, not_found
-from .layout import normalize_layout, resolve_layout, section_texts
+from .layout import normalize_layout, resolve_layout, section_entries
 from .scraper import fetch_job_text
 
 MIN_JOB_TEXT = 500  # §6.3: less scraped text than this counts as a failed fetch
@@ -29,7 +29,34 @@ def job_out(job: dict, fit: float | None = None) -> dict:
         "id": job["id"], "url": job.get("url") or "", "title": job.get("title"), "company": job.get("company"),
         "summary": job.get("summary"), "bullets": job.get("bullets") or [],
         "created_at": job.get("saved_at") or job["created_at"], "fit": calibrate_fit(fit),
+        "requirements": requirements_of(job),
     }
+
+
+def requirements_of(job: dict) -> list[dict]:
+    """Requirements live in jobs.qualifications (jsonb) as {"requirements": [{"id","text","kind"}]}."""
+    return list((job.get("qualifications") or {}).get("requirements") or [])
+
+
+def _ensure_requirements(job: dict, text: str) -> dict:
+    """Jobs summarized before requirements existed: extract them now (one LLM call) and store them."""
+    if requirements_of(job) or not (text or "").strip():
+        return job
+    try:
+        reqs = llm.extract_requirements(text)
+    except Exception as e:
+        print(f"extract_requirements failed for {job['id']}: {e}")
+        return job
+    quals = {**(job.get("qualifications") or {}), "requirements": reqs}
+    jobs.update(job["id"], qualifications=quals)
+    return {**job, "qualifications": quals}
+
+
+def _keep_matches(layout: dict, saved: dict) -> dict:
+    """Clients that don't send `matches` (None) keep the ones computed at selection time."""
+    if layout.get("matches") is None:
+        return {**layout, "matches": (saved.get("layout") or {}).get("matches") or {}}
+    return layout
 
 
 def pdf_out(row: dict) -> dict:
@@ -79,12 +106,14 @@ def _job_text(url: str, description: str | None) -> str:
 
 
 def _select_and_save(user_id: str, job: dict, text: str, tiles: list[dict]) -> None:
-    """LLM picks tiles for the job (budget fallback on failure); save the validated layout on the card."""
+    """LLM picks tiles + requirement matches for the job (budget/keyword fallback on failure); save the layout."""
+    job = {**job, "requirements": requirements_of(job)}
+    slim = [{k: t[k] for k in ("id", "category", "text", "data")} for t in tiles]
     try:
-        layout = llm.select_tiles(job, text, [{k: t[k] for k in ("id", "category", "text", "data")} for t in tiles])
+        layout = llm.select_tiles(job, text, slim)
     except Exception as e:
         print(f"select_tiles failed, using budget layout: {e}")
-        layout = llm._budget_layout(tiles)
+        layout = {**llm._budget_layout(tiles), "matches": llm.keyword_matches(job["requirements"], slim)}
     jobs.save(user_id, job["id"], normalize_layout(layout, tiles))
 
 
@@ -125,6 +154,7 @@ def create_job(user_id: str, url: str, description: str | None = None) -> dict:
     # 3. Get the job (reuse the global row if it's already summarized).
     if existing and existing.get("summary"):
         job, text = existing, existing.get("description") or ""
+        job = _ensure_requirements(job, text)
     else:
         text = _job_text(url, description)
         try:
@@ -132,10 +162,11 @@ def create_job(user_id: str, url: str, description: str | None = None) -> dict:
         except Exception as e:
             print(f"summarize_job failed: {e}")
             raise AppError(502, "LLM_FAILED", "Couldn't summarize the job. Please try again.")
+        quals = {"requirements": info.pop("requirements", [])}
         if existing:
-            job = jobs.update(existing["id"], description=text, **info)
+            job = jobs.update(existing["id"], description=text, qualifications=quals, **info)
         else:
-            job = jobs.create(user_id, text, url=url, **info)
+            job = jobs.create(user_id, text, url=url, qualifications=quals, **info)
         embed_job(job)
 
     # 4-5. LLM picks tiles, save the card + validated layout.
@@ -154,6 +185,7 @@ def autoselect(user_id: str, job_id: str) -> dict:
     tiles = list_tiles(user_id)
     if not tiles:
         raise AppError(400, "EMPTY_BANK", "Your Resume is empty. Add your resume first.")
+    saved = _ensure_requirements(saved, saved.get("description") or "")  # older jobs get requirements here
     _select_and_save(user_id, saved, saved.get("description") or "", tiles)
     return _detail(user_id, jobs.get_saved(user_id, job_id))
 
@@ -186,18 +218,21 @@ def recommended_jobs(user_id: str, limit: int = 10, include_saved: bool = False,
 
 
 def save_layout(user_id: str, job_id: str, layout: dict) -> None:
-    _get_saved(user_id, job_id)
-    jobs.set_layout(user_id, job_id, normalize_layout(layout, list_tiles(user_id)))
+    saved = _get_saved(user_id, job_id)
+    jobs.set_layout(user_id, job_id, normalize_layout(_keep_matches(layout, saved), list_tiles(user_id)))
 
 
 def generate_pdf(user_id: str, job_id: str, layout: dict) -> dict:
     """Save the layout, render the PDF, upload it, record it -> GeneratedPdf."""
     saved = _get_saved(user_id, job_id)
     tiles = list_tiles(user_id)
-    layout = normalize_layout(layout, tiles)
+    layout = normalize_layout(_keep_matches(layout, saved), tiles)
     jobs.set_layout(user_id, job_id, layout)
 
-    pdf_bytes = pdf.render_resume(profiles.get(user_id) or {}, section_texts(layout, tiles))
+    pdf_bytes = pdf.render_resume(
+        profiles.get(user_id) or {}, section_entries(layout, tiles), template=layout["template"],
+        labels=layout["labels"], meta={"title": saved.get("title"), "company": saved.get("company")},
+    )
     gen_id = str(uuid.uuid4())
     path = storage.upload(storage.RESUMES, f"{user_id}/{job_id}/{gen_id}.pdf", pdf_bytes)
     row = generated_resumes.create(

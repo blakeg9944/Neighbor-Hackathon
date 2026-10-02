@@ -44,16 +44,30 @@ class TileUpdate(BaseModel):
     data: dict | None = None       # replaces data and regenerates text
 
 
+class Requirement(BaseModel):
+    id: str                                         # "r1", "r2", ... stable within a job
+    text: str
+    kind: Literal["required", "preferred"] = "required"
+
+
 class Layout(BaseModel):
     sections: dict[Category, list[str]]
     unused: list[str] = []
     overrides: dict[str, str] = {}  # tile id -> text edited for THIS resume only; the bank tile is untouched
+    order: list[Category] = []      # section order for THIS resume; missing categories are appended in default order
+    matches: dict[str, list[str]] | None = None  # requirement id -> tile ids that show it; None = keep the saved ones
+    template: str | None = None     # "classic" | "modern" | "compact" (shared/resume_templates.json); None = default
+    labels: dict[Category, str] = {}  # per-resume section names, e.g. {"experience": "Professional Experience"}
 
 
 class ResolvedLayout(BaseModel):
     sections: dict[Category, list[Tile]]   # tiles carry their bank text; apply `overrides` for display
     unused: list[Tile]
     overrides: dict[str, str] = {}
+    order: list[Category] = []             # always a full permutation of the 6 categories
+    matches: dict[str, list[str]] = {}     # requirement id -> tile ids (any bank tile) that demonstrate it
+    template: str = "classic"
+    labels: dict[str, str] = {}
 
 
 class Job(BaseModel):
@@ -65,6 +79,7 @@ class Job(BaseModel):
     bullets: list[str] = []
     created_at: str
     fit: float | None = None  # calibrated match 0..1 (job_service.calibrate_fit); null until both are embedded
+    requirements: list[Requirement] = []  # every requirement/qualification in the posting (left pane of the editor)
 
 
 class JobListItem(Job):

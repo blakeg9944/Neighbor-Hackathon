@@ -4,7 +4,7 @@ name: Deploy backend
 on:
   push:
     branches: [prod]
-    paths: ["backend/**"]
+    paths: ["backend/**", "shared/**"]  # shared/resume_templates.json styles the PDFs
 jobs:
   deploy:
     runs-on: ubuntu-latest

@@ -3,9 +3,9 @@
 // an empty bank returns EMPTY_BANK.
 import { ApiError } from "./supabase";
 import {
-  CATEGORY_ORDER, emptySections,
+  CATEGORY_LABELS, CATEGORY_ORDER, emptySections, normalizeOrder,
   type Category, type GeneratedPdf, type Job, type JobDetail, type JobListItem, type Layout, type Profile,
-  type ProfileUpdate, type ResolvedLayout, type Tile,
+  type Matches, type ProfileUpdate, type Requirement, type ResolvedLayout, type Tile,
 } from "./types";
 
 interface StoredJob extends Omit<JobDetail, "layout" | "pdfs"> {
@@ -23,23 +23,28 @@ const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
 const delay = (ms = 300) => new Promise((r) => setTimeout(r, ms));
 
-const tile = (category: Category, text: string): Tile => ({
-  id: uid(), category, text, data: null, source_resume_id: null, created_at: now(),
+const tile = (category: Category, text: string, data: Record<string, unknown> | null = null): Tile => ({
+  id: uid(), category, text, data, source_resume_id: null, created_at: now(),
 });
 
-const SAMPLE_TILES: [Category, string][] = [
-  ["education", "B.S. Computer Science, State University (Expected May 2026), GPA 3.8"],
+// Structured data (like real imported resumes) for the main entries, so the preview shows the full layout.
+const SAMPLE_TILES: [Category, string, Record<string, unknown>?][] = [
+  ["education", "B.S. Computer Science, State University (Expected May 2026), GPA 3.8",
+    { institution: "State University", degree: "Computer Science", degree_type: "B.S.", gpa: "3.8", minor: null, location: "Provo, UT", start_date: null, end_date: "Expected May 2026", details: [] }],
   ["coursework", "Relevant Coursework: Data Structures, Algorithms, Databases, Operating Systems, Machine Learning"],
   ["skills", "Languages: Python, TypeScript, Java, SQL"],
   ["skills", "Frameworks: React, FastAPI, Node.js, PyTorch"],
   ["skills", "Tools: Git, Docker, AWS, PostgreSQL"],
-  ["experience", "Software Engineering Intern, Acme Corp (May 2025 – Aug 2025)\n• Built a Kafka ingestion service handling 2M events/day\n• Reduced p95 API latency by 40% by adding Redis caching"],
-  ["experience", "Teaching Assistant, State University CS Dept (Jan 2024 – Present)\n• Led weekly labs for 40 students in Data Structures\n• Wrote autograder tests used across 3 course sections"],
+  ["experience", "Software Engineering Intern, Acme Corp (May 2025 – Aug 2025)\n• Built a Kafka ingestion service handling 2M events/day\n• Reduced p95 API latency by 40% by adding Redis caching",
+    { title: "Software Engineering Intern", organization: "Acme Corp", location: "Salt Lake City, UT", start_date: "May 2025", end_date: "Aug 2025", bullets: ["Built a Kafka ingestion service handling 2M events/day", "Reduced p95 API latency by 40% by adding Redis caching"] }],
+  ["experience", "Teaching Assistant, State University CS Dept (Jan 2024 – Present)\n• Led weekly labs for 40 students in Data Structures\n• Wrote autograder tests used across 3 course sections",
+    { title: "Teaching Assistant", organization: "State University CS Dept", location: null, start_date: "Jan 2024", end_date: "Present", bullets: ["Led weekly labs for 40 students in Data Structures", "Wrote autograder tests used across 3 course sections"] }],
   ["experience", "Barista, Bean There Café (2022 – 2023)\n• Trained 5 new hires on POS and opening procedures"],
   ["projects", "Resume Adapter (Hackathon 2026)\n• Chrome extension + React app that tailors resumes to job postings with OpenAI"],
-  ["projects", "Campus Eats\n• Full-stack food ordering app (React, FastAPI, Postgres) used by 300+ students"],
+  ["projects", "Campus Eats (React, FastAPI, Postgres)\n• Full-stack food ordering app used by 300+ students",
+    { name: "Campus Eats", technologies: ["React", "FastAPI", "Postgres"], link: "github.com/alexr/campus-eats", date: "2024", bullets: ["Full-stack food ordering app used by 300+ students"] }],
   ["projects", "Stock Sentiment Bot\n• Scraped Reddit posts and classified sentiment with a fine-tuned BERT model"],
-  ["other", "Dean's List (6 semesters)"],
+  ["other", "Dean's List (6 semesters)", { title: "Dean's List", organization: null, date: "6 semesters", kind: "award", bullets: [] }],
   ["other", "Volunteer Coding Tutor, Girls Who Code (2023 – Present)"],
 ];
 
@@ -48,7 +53,7 @@ const seed = (): State => ({
     id: "mock-user", full_name: "Alex Rivera", email: "alex@example.com",
     phone: "(555) 123-4567", location: "Provo, UT", links: ["github.com/alexr", "linkedin.com/in/alexr"],
   },
-  tiles: SAMPLE_TILES.map(([c, t]) => tile(c, t)),
+  tiles: SAMPLE_TILES.map(([c, t, d]) => tile(c, t, d ?? null)),
   jobs: [],
 });
 
@@ -101,7 +106,48 @@ function resolve(layout: Layout): ResolvedLayout {
   const overrides = Object.fromEntries(
     Object.entries(layout.overrides ?? {}).filter(([id, text]) => byId.has(id) && text.trim()),
   );
-  return { sections, unused, overrides };
+  const matches = Object.fromEntries(
+    Object.entries(layout.matches ?? {}).map(([rid, ids]) => [rid, ids.filter((id) => byId.has(id))]),
+  );
+  const labels = Object.fromEntries(
+    Object.entries(layout.labels ?? {}).filter(([c, l]) => CATEGORY_ORDER.includes(c as Category) && l?.trim()),
+  );
+  return { sections, unused, overrides, order: normalizeOrder(layout.order), matches, template: layout.template ?? "classic", labels };
+}
+
+// Mirrors the backend's no-AI fallback (services/llm.py keyword_matches).
+const SAMPLE_REQUIREMENTS: Requirement[] = [
+  { id: "r1", text: "Build backend services in Python", kind: "required" },
+  { id: "r2", text: "Experience with TypeScript and React", kind: "required" },
+  { id: "r3", text: "SQL databases such as PostgreSQL", kind: "required" },
+  { id: "r4", text: "Caching with Redis", kind: "required" },
+  { id: "r5", text: "Streaming pipelines with Kafka", kind: "required" },
+  { id: "r6", text: "AWS and Docker deployments", kind: "required" },
+  { id: "r7", text: "Write tests and take part in code review", kind: "required" },
+  { id: "r8", text: "B.S. in Computer Science or equivalent", kind: "required" },
+  { id: "r9", text: "Go experience", kind: "required" },
+  { id: "r10", text: "Mentoring or teaching others", kind: "preferred" },
+  { id: "r11", text: "Kubernetes experience", kind: "preferred" },
+];
+const STOP = new Set(
+  "the and for with you your our are will have has this that from into able ability about experience years plus strong knowledge working work using use including such other related relevant skills least preferred required bonus nice familiarity equivalent take part others".split(" "),
+);
+const words = (text: string) =>
+  new Set((text.toLowerCase().replace(/\//g, " ").match(/[a-z0-9+#.]{2,}/g) ?? []).filter((w) => !STOP.has(w)));
+function keywordMatches(reqs: Requirement[], tiles: Tile[]): Matches {
+  const out: Matches = {};
+  for (const r of reqs) {
+    const rw = words(r.text);
+    const ids = tiles
+      .filter((t) => {
+        const tw = words(t.text);
+        const shared = [...rw].filter((w) => tw.has(w)).length;
+        return shared >= (t.text.split(/\s+/).length <= 4 ? 1 : 2);
+      })
+      .map((t) => t.id);
+    if (ids.length) out[r.id] = ids;
+  }
+  return out;
 }
 
 const BUDGET: Record<Category, number> = { education: 2, coursework: 1, skills: 4, experience: 4, projects: 3, other: 2 };
@@ -173,7 +219,7 @@ export const mockApi = {
     const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
     const created = blocks.length
       ? blocks.map((b) => tile("other", b))
-      : SAMPLE_TILES.slice(0, 6).map(([c, t]) => tile(c, t)); // uploaded file: pretend we extracted these
+      : SAMPLE_TILES.slice(0, 6).map(([c, t, d]) => tile(c, t, d ?? null)); // uploaded file: pretend we extracted these
     state.tiles = created; // upload replaces the whole bank (matches backend)
     save();
     return { tiles: created };
@@ -228,7 +274,11 @@ export const mockApi = {
         "Write tests and participate in code review",
         "B.S. in Computer Science or equivalent experience",
       ],
-      layout: autoSelect(`${j.description ?? ""} python typescript react fastapi postgresql sql api`),
+      requirements: SAMPLE_REQUIREMENTS,
+      layout: {
+        ...autoSelect(`${j.description ?? ""} python typescript react fastapi postgresql sql api`),
+        matches: keywordMatches(SAMPLE_REQUIREMENTS, state.tiles),
+      },
       pdfs: [],
     };
     state.jobs.push(job);
@@ -253,7 +303,8 @@ export const mockApi = {
   },
   async saveLayout(id: string, layout: Layout) {
     await delay();
-    findJob(id).layout = layout;
+    const job = findJob(id);
+    job.layout = { ...layout, matches: layout.matches ?? job.layout.matches }; // omitted matches are kept
     save();
     return { ok: true as const };
   },
@@ -261,20 +312,24 @@ export const mockApi = {
     await delay(1500);
     const job = findJob(id);
     if (!state.tiles.length) throw new ApiError(400, { code: "EMPTY_BANK", message: "Your Resume is empty." });
-    job.layout = autoSelect(`${job.summary ?? ""} ${job.bullets.join(" ")}`);
+    job.requirements = job.requirements?.length ? job.requirements : SAMPLE_REQUIREMENTS; // older mock jobs
+    job.layout = {
+      ...autoSelect(`${job.summary ?? ""} ${job.bullets.join(" ")}`),
+      matches: keywordMatches(job.requirements, state.tiles),
+    };
     save();
     return toDetail(job);
   },
   async generatePdf(id: string, layout: Layout): Promise<GeneratedPdf> {
     await delay(1500);
     const job = findJob(id);
-    job.layout = layout;
+    job.layout = { ...layout, matches: layout.matches ?? job.layout.matches };
     const resolved = resolve(layout);
     const p = state.profile;
     const lines = [p.full_name ?? "", [p.email, p.phone, p.location, ...p.links].filter(Boolean).join(" | "), ""];
-    for (const c of CATEGORY_ORDER) {
+    for (const c of normalizeOrder(resolved.order)) {
       if (!resolved.sections[c].length) continue;
-      lines.push(c.toUpperCase());
+      lines.push((resolved.labels?.[c] || CATEGORY_LABELS[c]).toUpperCase());
       for (const t of resolved.sections[c]) lines.push(...(resolved.overrides?.[t.id] ?? t.text).split("\n"));
       lines.push("");
     }
