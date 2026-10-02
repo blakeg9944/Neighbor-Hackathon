@@ -77,3 +77,12 @@ def section_entries(layout: dict, tiles: list[dict]) -> dict[str, list]:
             # The tile's own category decides the layout (a project dragged into Experience still reads as a project).
             out[c] = [{"category": t["category"], "data": t["data"]} if t.get("data") else t["text"] for t in placed]
     return out
+
+
+def section_texts(layout: dict, tiles: list[dict]) -> dict[str, list[str]]:
+    """Normalized layout -> {category: [plain text line, ...]} in print order (used by autofill_service).
+    Same content as section_entries, flattened to text; per-resume overrides applied."""
+    overrides = layout.get("overrides") or {}
+    by_id = {t["id"]: ({**t, "text": overrides[t["id"]], "data": None} if t["id"] in overrides else t) for t in tiles}
+    order = layout.get("order") or list(layout["sections"])
+    return {c: pdf_lines(c, [by_id[i] for i in layout["sections"].get(c, []) if i in by_id]) for c in order}

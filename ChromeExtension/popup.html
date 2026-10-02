@@ -23,11 +23,26 @@
       cursor: not-allowed;
       opacity: 0.5;
     }
+    button.secondary {
+      background: transparent;
+      border: 1px solid rgb(0, 101, 148);
+      color: rgb(0, 101, 148);
+      margin-top: 8px;
+    }
+    select {
+      width: 100%;
+      padding: 8px;
+      margin: 10px 0 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: white;
+      color: #0f172a;
+    }
     #title {
       margin: 16px 0 4px;
       font-weight: 600;
     }
-    #host, #status {
+    #host, #status, #autofillStatus {
       color: #64748b;
       font-size: 0.85em;
     }
@@ -37,6 +52,11 @@
       color: rgb(0, 101, 148);
       font-size: 0.85em;
     }
+    #autofillSection {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid #e2e8f0;
+    }
   </style>
 </head>
 <body>
@@ -45,6 +65,14 @@
   <div id="host"></div>
   <div id="status"></div>
   <button id="sendBtn" disabled>Make a Resume</button>
+
+  <div id="autofillSection" style="display: none;">
+    <select id="jobSelect" disabled></select>
+    <button id="fillBtn" class="secondary" disabled>Fill form</button>
+    <button id="downloadBtn" class="secondary" disabled>Download resume</button>
+    <div id="autofillStatus"></div>
+  </div>
+
   <a id="dashboard" href="#">Open dashboard</a>
   <script type="module" src="popup.js"></script>
 </body>

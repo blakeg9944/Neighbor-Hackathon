@@ -52,6 +52,7 @@ const seed = (): State => ({
   profile: {
     id: "mock-user", full_name: "Alex Rivera", email: "alex@example.com",
     phone: "(555) 123-4567", location: "Provo, UT", links: ["github.com/alexr", "linkedin.com/in/alexr"],
+    application: { linkedin_url: "linkedin.com/in/alexr", authorized_to_work_us: "yes", requires_sponsorship: "no" },
   },
   tiles: SAMPLE_TILES.map(([c, t, d]) => tile(c, t, d ?? null)),
   jobs: [],
@@ -208,7 +209,7 @@ export const mockApi = {
   },
   async updateMe(p: ProfileUpdate) {
     await delay();
-    state.profile = { ...state.profile, ...p };
+    state.profile = { ...state.profile, ...p, application: p.application ?? state.profile.application ?? {} };
     save();
     return state.profile;
   },

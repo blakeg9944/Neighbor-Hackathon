@@ -3,10 +3,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 
 from .auth import get_user_id
 from .schemas import (
-    GeneratedPdf, Job, JobCreate, JobDetail, JobListItem, Layout, Ok, Profile, ProfileUpdate, Tile, TileCreate,
-    TilesOut, TileUpdate,
+    AutofillFieldsRequest, AutofillMappingResult, GeneratedPdf, Job, JobCreate, JobDetail, JobListItem, Layout, Ok,
+    Profile, ProfileUpdate, Tile, TileCreate, TilesOut, TileUpdate,
 )
-from .services import bank_service, job_service, profile_service
+from .services import autofill_service, bank_service, job_service, profile_service
 
 router = APIRouter(prefix="/api")
 
@@ -101,6 +101,12 @@ def get_job(job_id: str, user_id: str = Depends(get_user_id)):
 @router.post("/jobs/{job_id}/autoselect", response_model=JobDetail)
 def autoselect(job_id: str, user_id: str = Depends(get_user_id)):
     return job_service.autoselect(user_id, job_id)
+
+
+@router.post("/jobs/{job_id}/autofill", response_model=AutofillMappingResult)
+def autofill(job_id: str, body: AutofillFieldsRequest, user_id: str = Depends(get_user_id)):
+    """Called by the extension itself (bridged auth) with fields extracted from a live application page."""
+    return autofill_service.map_fields_for_job(user_id, job_id, [f.model_dump() for f in body.fields])
 
 
 @router.put("/jobs/{job_id}/layout", response_model=Ok)

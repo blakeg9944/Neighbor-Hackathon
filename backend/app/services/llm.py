@@ -329,6 +329,111 @@ def _budget_layout(tiles: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# map_fields (auto-apply: application form field -> value, DESIGN_SPEC §9.1)
+# ---------------------------------------------------------------------------
+class _FieldValue(BaseModel):
+    key: str = Field(description="The field's short key, e.g. 'f3'")
+    value: str
+
+
+class _FieldsOut(BaseModel):
+    values: list[_FieldValue]
+
+
+MAP_FIELDS_INSTRUCTIONS = """You fill out a job application form using a candidate's profile and resume.
+Each form field has a short key like "f3".
+
+The PROFILE JSON includes a nested "application" object with pre-answered generic application questions.
+Prefer it over inferring from the resume whenever a field matches one of these:
+- application.linkedin_url / github_url / portfolio_url -> LinkedIn/GitHub/portfolio/website fields
+- application.city / state / postal_code / country -> address fields
+- application.school / degree / major / graduation_date / gpa -> education fields not already on a resume tile
+- application.authorized_to_work_us / requires_sponsorship / over_18 / willing_to_relocate -> map this
+  "yes"/"no" straight onto whatever the field's own options are (e.g. a select with "Yes"/"No")
+- application.earliest_start_date / desired_salary -> start-date / compensation fields
+- application.pronouns / gender / hispanic_latino / race / veteran_status / disability_status -> voluntary
+  EEO self-identification questions. The candidate explicitly pre-answered these in their profile, so use
+  them when present — map to the field's own wording, including matching "decline" to whatever
+  "prefer not to answer" option the field offers. `race` may hold several values: for a field marked
+  multiple=true, return every matching option as one comma-separated string.
+- If the matching application.* value is null/missing/empty, OMIT that field rather than guessing — an
+  unanswered profile field means the candidate hasn't decided on an answer, not that you should pick one.
+
+Beyond the application object:
+- Copy name/email/phone/location straight from the top-level profile fields.
+- For "select"/"multiselect"/"radio" fields, each value must exactly match one of that field's listed
+  options (copy the option text verbatim). "radio" is always single-choice. If a "select"/"multiselect"
+  field is marked multiple=true and more than one option applies, return them as a single comma-separated
+  string of exact option texts (e.g. "Python, SQL, Docker").
+- For short open-ended questions (e.g. "Why do you want to work here?"), write a brief (1-3 sentence) answer
+  grounded in the resume and the job summary. Never invent facts not present in the resume.
+- OMIT a field entirely (don't include it in the list) if you don't have the information for it.
+- Never include a value for a file-upload field."""
+
+
+def map_fields(fields: list[dict], profile: dict, resume_text: str, job: dict) -> dict[str, str]:
+    """fields: [{"field_id","label","type","options"}] -> {field_id: value}, confident fields only."""
+    if USE_STUBS or not fields:
+        return _stub_field_mapping(fields, profile)
+
+    key_to_id = {f"f{i}": f["field_id"] for i, f in enumerate(fields, 1)}
+    listing = "\n".join(
+        f"[{k}] {f['label']} (type={f['type']}" + (f", options={f['options']}" if f.get("options") else "") + ")"
+        for k, f in zip(key_to_id, fields)
+    )
+    job_info = {k: job.get(k) for k in ("title", "company", "summary")}
+    user_input = (
+        f"PROFILE:\n{json.dumps(profile, indent=1)}\n\nRESUME:\n{resume_text[:8000]}"
+        f"\n\nJOB:\n{json.dumps(job_info, indent=1)}\n\nFORM FIELDS:\n{listing}"
+    )
+    out = _parse(MAP_FIELDS_INSTRUCTIONS, user_input, _FieldsOut)
+
+    mapping: dict[str, str] = {}
+    for item in out.values:
+        fid = key_to_id.get(item.key.strip().strip("[]"))
+        if fid and item.value.strip():
+            mapping[fid] = item.value.strip()
+    return mapping
+
+
+def _stub_field_mapping(fields: list[dict], profile: dict) -> dict[str, str]:
+    """Stub mode: match a few obvious profile/application fields by label keyword; skip everything else."""
+    name = profile.get("full_name") or ""
+    app = profile.get("application") or {}
+    keyword_map = [
+        (("first name",), name.split(" ")[0] if name else None),
+        (("last name",), name.split(" ")[-1] if name else None),
+        (("full name", "your name"), name or None),
+        (("email",), profile.get("email")),
+        (("phone",), profile.get("phone")),
+        (("city",), app.get("city") or profile.get("location")),
+        (("state",), app.get("state")),
+        (("postal", "zip"), app.get("postal_code")),
+        (("country",), app.get("country")),
+        (("location",), profile.get("location")),
+        (("linkedin",), app.get("linkedin_url")),
+        (("github",), app.get("github_url")),
+        (("portfolio", "website"), app.get("portfolio_url") or next(iter(profile.get("links") or []), None)),
+        (("school", "university"), app.get("school")),
+        (("degree",), app.get("degree")),
+        (("major",), app.get("major")),
+        (("sponsor",), app.get("requires_sponsorship")),
+        (("authorized", "authorization"), app.get("authorized_to_work_us")),
+        (("relocat",), app.get("willing_to_relocate")),
+        (("start date",), app.get("earliest_start_date")),
+        (("salary", "compensation"), app.get("desired_salary")),
+    ]
+    mapping: dict[str, str] = {}
+    for f in fields or []:
+        label = (f.get("label") or "").lower()
+        for keywords, value in keyword_map:
+            if value and any(k in label for k in keywords):
+                mapping[f["field_id"]] = value
+                break
+    return mapping
+
+
+# ---------------------------------------------------------------------------
 # Stub data (used when OPENAI_API_KEY is missing)
 # ---------------------------------------------------------------------------
 def _stub(category: str, **data) -> dict:

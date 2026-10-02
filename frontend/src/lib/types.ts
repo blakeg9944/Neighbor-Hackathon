@@ -15,6 +15,39 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   other: "Other",
 };
 
+export type YesNo = "yes" | "no";
+export type Race =
+  | "american_indian_alaska_native" | "asian" | "black_african_american"
+  | "native_hawaiian_pacific_islander" | "white" | "two_or_more" | "decline";
+
+/** Generic job-application answers (auto-apply). All optional; missing/null = not answered. */
+export interface ApplicationInfo {
+  linkedin_url?: string | null;
+  github_url?: string | null;
+  portfolio_url?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  school?: string | null;
+  degree?: string | null;
+  major?: string | null;
+  graduation_date?: string | null; // "YYYY-MM"
+  gpa?: string | null;
+  authorized_to_work_us?: YesNo | null;
+  requires_sponsorship?: YesNo | null;
+  over_18?: YesNo | null;
+  willing_to_relocate?: YesNo | null;
+  earliest_start_date?: string | null; // "YYYY-MM-DD"
+  desired_salary?: string | null;
+  pronouns?: string | null;
+  gender?: "male" | "female" | "non_binary" | "decline" | null;
+  hispanic_latino?: YesNo | "decline" | null;
+  race?: Race[];
+  veteran_status?: "not_veteran" | "protected_veteran" | "veteran" | "decline" | null;
+  disability_status?: YesNo | "decline" | null;
+}
+
 export interface Profile {
   id: string;
   full_name: string | null;
@@ -22,6 +55,7 @@ export interface Profile {
   phone: string | null;
   location: string | null;
   links: string[];
+  application: ApplicationInfo;
 }
 
 export type ProfileUpdate = Partial<Omit<Profile, "id" | "email">>;

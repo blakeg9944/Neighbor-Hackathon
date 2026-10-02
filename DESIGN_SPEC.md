@@ -28,7 +28,7 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | Schema | **Evolve the existing schema** (the `init` migration + the database guy's `app/db/` layer) instead of replacing it. See §5. |
 | Supabase | One shared **hosted** project. Migrations are pushed with `supabase db push`. |
 | Auth | **Google sign-in only**, through Supabase (set up by **James**). No email/password. Sessions **persist**, so the user stays signed in across visits (§8.4). |
-| Extension | Popup with a **"Make a Resume"** button that **opens the website**. The extension makes no API calls and needs no auth of its own; the website authenticates the user before generation. |
+| Extension | Popup with a **"Make a Resume"** button that **opens the website**. For tailoring, the extension makes no API calls and needs no auth of its own; the website authenticates the user before generation. **Exception (§9 auto-apply):** the popup's "Fill form"/"Download resume" buttons call the backend directly, using an access token a content script copies out of the website's own `localStorage` session. |
 | Job text | Backend fetches the URL. If the fetch fails or returns too little text, the UI asks the user to **paste the description**. |
 | Tailoring | The LLM **selects and orders** existing tiles and does **not rewrite** them. *(Rewriting is a stretch goal.)* |
 | PDF | Rendered **in the backend with ReportLab** (pure Python, works on Windows) and stored in the Supabase `resumes` bucket. |
@@ -38,6 +38,7 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | Resume header | Name, email, phone, location and links come from the **profile** (editable on the Bank page), not from tiles. |
 | Hosting | Demo runs on **localhost**. AWS *(stretch)*. |
 | Job matching | **In scope (added):** a **fit score** per job (cosine similarity of the user's whole-bank embedding vs the job's embedding of its **clean summary** (title, company, summary, bullets; not the raw page), via the existing `job_fit`/`match_jobs` RPCs, then rescaled from the raw 0.20–0.55 range onto 0–1 by `job_service.calibrate_fit`) and **recommended jobs** from the global pool. Embeddings use `text-embedding-3-small`. Fit is `null` until both sides are embedded (or with no OpenAI key). |
+| Auto-apply | **In scope (added, §9):** on a real application page, the extension itself (not the website) extracts the form's fields via `chrome.scripting`, sends them to `POST /api/jobs/{id}/autofill` for one LLM field→value mapping, then injects the values back into that same live tab. **Never auto-clicks Submit/Next.** The resume file input can't be auto-filled (browser security restriction on file inputs, no workaround) — a "Download resume" button fetches the right generated PDF to Downloads instead. |
 | Out of scope | RAG / per-tile retrieval. |
 
 ---
@@ -186,6 +187,7 @@ On **read**, the backend returns a `ResolvedLayout`, which has the same shape bu
 | Dashboard card (a user's job) | `saved_jobs` | One row per (user, job). Add `layout` (the user's saved layout for that job). |
 | Generated PDF (history) | `generated_resumes` | One row per PDF: `job_id`, `storage_path`, `content` = layout snapshot, `title` = job title, `created_at` = date stamp. `match_score` unused. |
 | Resume header | `profiles` | Add `phone`, `location`, `links`. |
+| Application answers *(added)* | `profiles.application` | jsonb, shape = `ApplicationInfo` (§6.1); migration `20261003000000_application_info.sql`. Used by auto-apply (§9.1). |
 | Original upload | `source_resumes` | unchanged |
 
 **New migration** `supabase/migrations/20261002120000_tiles_redesign.sql` (database guy):
@@ -247,6 +249,18 @@ type Category = "education" | "coursework" | "skills" | "experience" | "projects
 interface Profile {
   id: string; full_name: string | null; email: string | null;
   phone: string | null; location: string | null; links: string[];
+  application: ApplicationInfo;          // (added) generic job-application answers, all optional
+}
+interface ApplicationInfo {              // DB: profiles.application (jsonb). Unanswered = missing/null.
+  linkedin_url?, github_url?, portfolio_url?, city?, state?, postal_code?, country?: string;
+  school?, degree?, major?, gpa?: string; graduation_date?: string;   // "YYYY-MM"
+  authorized_to_work_us?, requires_sponsorship?, over_18?, willing_to_relocate?: "yes" | "no";
+  earliest_start_date?: string; desired_salary?: string;              // "YYYY-MM-DD"
+  pronouns?: string; gender?: "male" | "female" | "non_binary" | "decline";
+  hispanic_latino?, disability_status?: "yes" | "no" | "decline";
+  race?: ("american_indian_alaska_native" | "asian" | "black_african_american"
+          | "native_hawaiian_pacific_islander" | "white" | "two_or_more" | "decline")[];
+  veteran_status?: "not_veteran" | "protected_veteran" | "veteran" | "decline";
 }
 
 interface Tile {                       // DB: resume_items (text <- content_text, category <- section)
@@ -301,7 +315,7 @@ interface JobDetail extends Job {
 |---|---|---|---|
 | `GET /api/health` | – | `{ok: true}` | no auth |
 | `GET /api/me` | – | `Profile` | |
-| `PUT /api/me` | `Partial<Profile>` (no id/email) | `Profile` | contact info for the resume header |
+| `PUT /api/me` | `Partial<Profile>` (no id/email) | `Profile` | contact info for the resume header; `application` **replaces** the stored answers (unanswered fields dropped) |
 | `POST /api/resume/parse` | multipart: `file` (PDF) **or** form field `text` | `{tiles: Tile[]}` | `pdf.pdf_to_text`, then `llm.extract_tiles`, then **replace** the whole bank (all existing tiles, including manual ones, are deleted, but only after parsing succeeds) and return the new tiles. Saved job layouts drop the deleted tiles; already-generated PDFs are unaffected. Stores the PDF in `uploads` + a `source_resumes` row. |
 | `GET /api/tiles` | – | `Tile[]` | ordered by category order, then created_at |
 | `POST /api/tiles` | `{category, text}` **or** `{category, data}` | `Tile` | manual "add tile"; with `data`, text is generated (422 `BAD_TILE_DATA` if invalid) |
@@ -316,6 +330,7 @@ interface JobDetail extends Job {
 | `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF (overrides and section order applied), uploads, inserts `generated_resumes` row |
 | `GET /api/jobs/recommended?limit=10&offset=0&include_saved=false` | – | `Job[]` | **(added)** global-pool jobs most similar to the user's whole-resume embedding, ranked by `fit` (best first). Excludes jobs already on the dashboard unless `include_saved=true`. `limit` 1–50; page with `offset` (ask for `limit + 1` to know if there's a next page). `created_at` = when the job entered the pool. Embeds the profile on the fly if it was never embedded; empty with an empty bank or no OpenAI key. |
 | `DELETE /api/jobs/{id}` | – | `{ok: true}` | removes the user's `saved_jobs` row |
+| `POST /api/jobs/{id}/autofill` | `{fields: [{field_id, label, type, options?, multiple?}]}` | `{mapping: Record<string,string>}` | **(added, §9)** Called by the **extension itself** (bridged auth, not the website) with the live application page's extracted form fields — `type` includes `"radio"` (a whole native radio group, one field per shared `name`) and `"multiselect"` (custom ARIA listbox pickers), not just the native `input`/`select` types; `multiple: true` means the value may be a comma-separated list of exact option texts. Builds resume context from the job's saved layout + profile (incl. `profile.application`), one `llm.map_fields` call, returns a `field_id -> value` map for fields it's confident about (unknown/unanswered fields are simply omitted). The extension applies the mapping; the backend never touches a browser. |
 
 ### 6.3 `POST /api/jobs` flow
 1. If the user already has a `saved_jobs` row for this URL's job **with a layout**, return its `JobDetail` (re-picking tiles first if the layout is stale, as in `GET /api/jobs/{id}`).
@@ -355,6 +370,8 @@ def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict: ...
 def keyword_matches(requirements: list[dict], tiles: list[dict]) -> dict: ...   # no-AI fallback for matches
 def embed(text: str) -> list[float] | None: ...
     # text-embedding-3-small (1536 dims); None when OPENAI_API_KEY is unset (stub mode)
+def map_fields(fields: list[dict], profile: dict, resume_text: str, job: dict) -> dict[str, str]: ...
+    # fields: [{"field_id","label","type","options"}] -> {field_id: value}, confident fields only (§9 auto-apply)
 
 # services/pdf.py  (openai guy)
 def pdf_to_text(data: bytes) -> str: ...            # pypdf, join page texts
@@ -390,6 +407,7 @@ def render_resume(profile: dict, sections: dict[str, list], template: str | None
 - **extract_tiles:** structured output with one list per category (§4.2 fields). Copy fields **verbatim** (whitespace cleanup only); null when absent. **One entry per skill** (split comma lists; `group` = the resume's own label) and **one entry per course** (pulled out of education). Awards, certifications, volunteering, etc. go to `other`. Never invent content.
 - **summarize_job:** factual and concise; bullets = the most important requirements/responsibilities.
 - **select_tiles:** choose the most relevant tiles and order each section by relevance. Rough one-page budget: education ≤2, coursework ≤6 courses, skills ≤12 skills, experience ≤4, projects ≤3, other ≤2. Skills/courses are individual tiles, so pick the ones relevant to the job. **Only use IDs from the input.** Normally keep tiles in their bank category.
+- **map_fields:** prefer `profile.application` (`ApplicationInfo`, §6.1) over inferring from the resume whenever a field matches one of its fields (links, address, education, work eligibility/logistics, voluntary EEO self-ID) — the candidate explicitly pre-answered those in their profile, so use them (including "decline") when present; **omit** the form field entirely when the matching `application.*` value is null/missing, rather than guessing. Beyond that: profile fields verbatim, short resume-grounded answers for open-ended questions. For `select`/`multiselect` fields the value must exactly match a listed option (comma-separated exact option texts when `multiple: true`). Never return a value for a file-upload field.
 - Model: env `OPENAI_MODEL`, default `gpt-5.6-luna` (structured outputs; no `temperature`, since gpt-5 models reject it).
 
 ---
@@ -402,6 +420,7 @@ def render_resume(profile: dict, sections: dict[str, list], template: str | None
 | `/login` | "Continue with Google" button only. After login go to `?next=` (default `/`). | public |
 | `/` | **Dashboard**: URL input ("Tailor a resume") + grid of job cards | required |
 | `/bank` | **Your Resume** (UI name for the resume bank; code and this spec still say "bank"): upload/paste resume, tile list, add-tile form, profile/contact form | required |
+| `/profile` | **Profile** *(added)*: opened by clicking the user in the sidebar. Contact/header fields + `ApplicationInfo` (links, address, education, work eligibility, voluntary EEO self-ID) for auto-apply. | required |
 | `/opportunities` | **Job Opportunities** *(added)*: the 10 global-pool jobs closest to the user's bank (`GET /api/jobs/recommended`), dashboard-style table with fit bars; a row opens the summary, and "Tailor resume" goes to `/generate?url=`. | required |
 | `/generate?url=` | **Generate**: if `url` is present, auto-start `POST /api/jobs`; shows progress, the paste fallback, and errors | required |
 | `/jobs/:id/review` | **Resume editor**: three resizable, toggleable panes: Job Description Points · Editor · Live preview (§8.2) | required |
@@ -489,9 +508,34 @@ Mockup: `design/mockups/6-hybrid.html` (kept local, gitignored). Rules for any n
 - **Open dashboard** opens `SITE_URL + "/"`.
 - If the active tab isn't an `http(s)` page (e.g. `chrome://`), disable the button and show "Open a job posting first".
 - `const SITE_URL = "http://localhost:5173";` at the top of `popup.js`.
-- **No `fetch` to the backend** and no auth in the extension; the website handles login (§8.4) and calls `/api/url` for extension-originated URLs.
+- **No `fetch` to the backend** and no auth in the extension for tailoring; the website handles login (§8.4) and calls `/api/url` for extension-originated URLs.
 - `manifest.json`: keep `"action": {"default_popup": "popup.html"}` and `"permissions": ["activeTab"]`; **remove `host_permissions`**; update the description.
 - Load via `chrome://extensions`, then Developer mode, then "Load unpacked", then select `ChromeExtension/`. Click the reload icon there after edits.
+
+### 9.1 Auto-apply (added)
+
+On any other job **application** page (not the posting itself — application URLs usually differ), the same popup additionally shows a saved-job picker and two buttons:
+```
+┌──────────────────────────────┐
+│ [icon] Resume Adapter        │
+│ ...(title/host as above)...  │
+│ [     Make a Resume      ]   │
+│ [ Select resume:  Acme SWE ▾]│  ← GET /api/jobs, pre-selected by title/company match
+│ [      Fill form         ]   │
+│ [    Download resume     ]   │
+│ Open dashboard               │
+└──────────────────────────────┘
+```
+This is the **one exception** to "no API calls/no auth" above:
+- **Auth bridge:** a new content script, `authBridge.js`, matches only `http://localhost:5173/*`, reads the Supabase session Supabase-js already writes to that origin's `localStorage` (key `sb-<project-ref>-auth-token`), and copies `access_token`/`expires_at` into `chrome.storage.local` on load plus a ~30s recheck while that tab stays open (catches token auto-refresh). It has no UI and runs only on the website's own origin — nothing is injected into job sites by this script.
+- **Select resume:** popup calls `GET /api/jobs` with the bridged token, pre-selects the closest title/company match to the active tab.
+- **Fill form:** `chrome.scripting.executeScript({allFrames: true})` (triggered by the button click, scoped to the active tab via `activeTab` — no broad host permissions) extracts fields from the live tab (and same-tab iframes, e.g. Greenhouse's embedded form), `POST`s `{fields}` to `/api/jobs/{id}/autofill`, then runs a second `executeScript` injection applying the returned `mapping` directly into that tab.
+  - Native `input[type=radio]` groups are extracted as **one field per shared `name`** (`type: "radio"`, `options` = each choice's own label, field label = the fieldset's own question text) — not one disconnected field per radio button, which would lose both the question and the sibling choices (this is how Ashby's own single-select questions are built: a `<fieldset>` of individually-labeled radios, no custom widget at all).
+  - **Never clicks a Submit/Next/Continue button or any other page control.** The only things ever clicked are: (a) a native `input[type=checkbox|radio]` the extraction step itself found (standard form controls, never navigation — clicking rather than setting `.checked` directly is what makes this register on React-controlled forms like Ashby's), and (b) elements with ARIA `role="option"` inside a field extraction tagged as `role="listbox"` (custom multi/single-select pickers, e.g. React-Select-style skill/location fields). Native `<select multiple>` is handled by setting `.selected` on the matching `<option>`s instead of clicking anything.
+  - A listbox whose options aren't yet rendered (e.g. a closed combobox that lazy-loads them) isn't extracted — known gap, not every custom widget library is covered.
+- **Download resume:** calls `GET /api/jobs/{id}` (existing endpoint, already returns signed PDF URLs) and `chrome.downloads.download(...)` to save the latest PDF straight to Downloads — the mitigation for the one thing that can't be scripted: browsers block any script, including extension content scripts, from setting a `<input type="file">`'s value.
+- New `manifest.json` permissions: `storage`, `scripting`, `downloads` (plus the existing `activeTab`); new `content_scripts: [{matches: ["http://localhost:5173/*"], js: ["authBridge.js"]}]`.
+- Known limits: only the first page of a multi-page application form is filled; the cached token can go stale if the website tab hasn't been open recently (popup should prompt "sign in again" rather than fail silently).
 
 ---
 
@@ -543,6 +587,7 @@ Each person owns specific files. **Don't edit another person's files without ask
 3. **Demo prep:** collect 3–4 job URLs that scrape cleanly (Greenhouse/Lever/Ashby), save one job description as text for the paste fallback, and put a realistic sample resume PDF in `demo/`.
 4. **QA:** from Checkpoint 1 on, run the demo flow end to end on his machine and report bugs to the owner.
 5. Own the **demo script** (§13) and run the rehearsals.
+6. **Auto-apply** (§9.1, added): owns everything in `ChromeExtension/**` for this feature (auth bridge content script, manifest permissions, popup job picker + Fill form/Download resume). **Crosses into the openai guy's `llm.py` and the database guy's `schemas.py`/`routes.py`** for the one new `map_fields` function and `/api/jobs/{id}/autofill` route — announce this addition to the team since it changes the "extension makes no API calls" locked decision (§2).
 
 ### OpenAI guy: LLM + PDF
 **Owns:** `backend/app/services/llm.py`, `backend/app/services/pdf.py`, `backend/samples/**`
