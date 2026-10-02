@@ -17,22 +17,17 @@ class ScraperService:
 
             soup = BeautifulSoup(response.text, "html.parser")
 
-            title = soup.title.string.strip() if soup.title and soup.title.string else "No Title Found"
+            # Remove non-visible tags like script and style blocks before extracting text
+            for element in soup(["script", "style", "noscript", "header", "footer"]):
+                element.decompose()
 
-            meta_desc = soup.find("meta", attrs={"name": "description"})
-            description = meta_desc["content"].strip() if meta_desc and meta_desc.get("content") else ""
-
-            h1_tags = [h1.get_text(strip=True) for h1 in soup.find_all("h1")]
-
-            og_image = soup.find("meta", property="og:image")
-            image_url = og_image["content"] if og_image and og_image.get("content") else None
+            # Extract full page text without length limit
+            full_text = soup.get_text(separator=" ", strip=True)
 
             return {
-                "title": title,
-                "description": description,
-                "h1s": h1_tags,
-                "image_url": image_url,
-                "raw_text_sample": soup.get_text(separator=" ", strip=True)[:300]
+                "title": soup.title.string.strip() if soup.title and soup.title.string else "No Title",
+                "full_text": full_text,  # Complete page text
+                "html_length": len(response.text)
             }
 
         except httpx.HTTPStatusError as e:
