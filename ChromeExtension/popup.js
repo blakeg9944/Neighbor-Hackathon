@@ -1,6 +1,7 @@
 import { CONFIG } from './config.js';
 
 const API_URL = CONFIG.backendUrl;
+const SITE_ORIGIN = new URL(CONFIG.frontendUrl).origin;
 const SITE_HOST = new URL(CONFIG.frontendUrl).hostname;
 const makeResumeButton = document.getElementById("sendBtn");
 const statusDiv = document.getElementById("status");
@@ -62,8 +63,11 @@ document.getElementById("dashboard").addEventListener("click", (event) => {
 // authBridge.js copied out of the website's own Supabase session.
 
 function getToken() {
+  // Namespaced by origin (see authBridge.js) so a stale tab on another environment (e.g. local dev)
+  // can never clobber the token for whichever environment config.js currently points at.
+  const key = `session:${SITE_ORIGIN}`;
   return new Promise((resolve) => {
-    chrome.storage.local.get(["access_token"], (data) => resolve(data.access_token || null));
+    chrome.storage.local.get([key], (data) => resolve((data[key] && data[key].access_token) || null));
   });
 }
 

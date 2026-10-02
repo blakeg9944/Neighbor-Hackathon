@@ -24,8 +24,12 @@ function findSupabaseSession() {
 }
 
 function syncToken() {
+  // chrome.storage.local is one global bucket for the whole extension, not scoped per-origin -- this
+  // content script runs on every environment's frontend (local + production). Namespace by origin so a
+  // stale tab on one environment can never clobber another's token; the popup reads the slot matching
+  // whichever environment config.js currently points at.
   const session = findSupabaseSession();
-  if (session) chrome.storage.local.set(session);
+  if (session) chrome.storage.local.set({ [`session:${location.origin}`]: session });
 }
 
 syncToken();
