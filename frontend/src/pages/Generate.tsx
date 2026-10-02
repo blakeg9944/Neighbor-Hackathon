@@ -17,13 +17,15 @@ export default function Generate() {
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState(0);
   const autoStarted = useRef(false); // StrictMode runs effects twice in dev
+  const fromExtension = params.get("source") === "extension";
 
   const run = async (jobUrl: string, desc?: string) => {
     setStatus("loading");
     setError(null);
     setStage(0);
     try {
-      const job = await Api.createJob({ url: jobUrl, description: desc });
+      const request = { url: jobUrl, description: desc };
+      const job = fromExtension ? await Api.createJobFromUrl(request) : await Api.createJob(request);
       navigate(`/jobs/${job.id}/review`);
     } catch (e) {
       if (e instanceof ApiError && e.code === "FETCH_FAILED") setStatus("fetch_failed");
@@ -36,10 +38,10 @@ export default function Generate() {
   };
 
   useEffect(() => {
-    const fromExtension = params.get("url");
-    if (fromExtension && !autoStarted.current) {
+    const initialUrl = params.get("url");
+    if (initialUrl && !autoStarted.current) {
       autoStarted.current = true;
-      run(fromExtension);
+      run(initialUrl);
     }
   }, []);
 

@@ -1,38 +1,42 @@
-document.getElementById('sendBtn').addEventListener('click', async () => {
-  const statusDiv = document.getElementById('status');
-  statusDiv.textContent = "Sending...";
+const SITE_URL = "http://localhost:5173";
+const makeResumeButton = document.getElementById("sendBtn");
+const statusDiv = document.getElementById("status");
+let activeUrl = "";
 
+chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+  const title = document.getElementById("title");
+  const host = document.getElementById("host");
+
+  if (!tab || !tab.url) {
+    statusDiv.textContent = "Open a job posting first";
+    return;
+  }
+
+  title.textContent = tab.title || "Untitled page";
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-    if (!tab || !tab.url) {
-      statusDiv.textContent = "Could not retrieve active URL.";
+    const parsedUrl = new URL(tab.url);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      statusDiv.textContent = "Open a job posting first";
       return;
     }
 
-    const response = await fetch("http://127.0.0.1:8000/api/url", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ url: tab.url })
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      statusDiv.textContent = "URL successfully sent! Opening page...";
-
-      // Option A: Open a dynamic URL returned by your FastAPI backend
-      const targetUrl = data.redirect_url || "http://localhost:3000/dashboard";
-
-      // Option B: Open a fixed frontend page
-      // const targetUrl = "http://localhost:3000/results";
-
-      chrome.tabs.create({ url: targetUrl });
-    } else {
-      statusDiv.textContent = `Server error: ${response.status}`;
-    }
-  } catch (error) {
-    statusDiv.textContent = `Error: ${error.message}`;
+    activeUrl = tab.url;
+    host.textContent = parsedUrl.hostname;
+    makeResumeButton.disabled = false;
+  } catch {
+    statusDiv.textContent = "Open a job posting first";
   }
+});
+
+makeResumeButton.addEventListener("click", () => {
+  if (!activeUrl) return;
+  const query = new URLSearchParams({ url: activeUrl, source: "extension" });
+  chrome.tabs.create({ url: `${SITE_URL}/generate?${query.toString()}` });
+  window.close();
+});
+
+document.getElementById("dashboard").addEventListener("click", (event) => {
+  event.preventDefault();
+  chrome.tabs.create({ url: `${SITE_URL}/` });
+  window.close();
 });

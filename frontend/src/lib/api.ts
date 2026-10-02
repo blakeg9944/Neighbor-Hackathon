@@ -28,10 +28,13 @@ const real = {
   deleteTile: (id: string) => api<{ ok: true }>(`/api/tiles/${id}`, { method: "DELETE" }),
 
   createJob: (j: { url: string; description?: string }) => api<JobDetail>("/api/jobs", json("POST", j)),
+  createJobFromUrl: (j: { url: string; description?: string }) => api<JobDetail>("/api/url", json("POST", j)),
   listJobs: () => api<JobListItem[]>("/api/jobs"),
   getJob: (id: string) => api<JobDetail>(`/api/jobs/${id}`),
   saveLayout: (id: string, layout: Layout) => api<{ ok: true }>(`/api/jobs/${id}/layout`, json("PUT", layout)),
   generatePdf: (id: string, layout: Layout) => api<GeneratedPdf>(`/api/jobs/${id}/pdfs`, json("POST", layout)),
 };
 
-export const Api: typeof real = USE_MOCKS ? mock.mockApi : real;
+export const Api: typeof real = USE_MOCKS
+  ? { ...mock.mockApi, createJobFromUrl: mock.mockApi.createJob }
+  : real;

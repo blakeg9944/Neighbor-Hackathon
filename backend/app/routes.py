@@ -1,9 +1,5 @@
-"""All /api endpoints (DESIGN_SPEC §6). Routes only handle HTTP input/output; logic lives in services/.
-Sync handlers: FastAPI runs them in a threadpool, which suits the sync Supabase/OpenAI clients."""
-from urllib.parse import quote
-
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+"""All /api endpoints (DESIGN_SPEC §6). Routes only handle HTTP input/output; logic lives in services/."""
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 
 from .auth import get_user_id
 from .schemas import (
@@ -11,7 +7,6 @@ from .schemas import (
     TilesOut, TileUpdate,
 )
 from .services import bank_service, job_service, profile_service
-from .services.scraper import ScraperService
 
 router = APIRouter(prefix="/api")
 
@@ -81,6 +76,12 @@ def create_job(body: JobCreate, user_id: str = Depends(get_user_id)):
     return job_service.create_job(user_id, body.url, body.description)
 
 
+@router.post("/url", response_model=JobDetail)
+def create_job_from_url(body: JobCreate, user_id: str = Depends(get_user_id)):
+    """Use the same authenticated tailoring flow for a URL supplied by the extension."""
+    return job_service.create_job(user_id, body.url, body.description)
+
+
 @router.get("/jobs", response_model=list[JobListItem])
 def list_jobs(user_id: str = Depends(get_user_id)):
     return job_service.list_jobs(user_id)
@@ -111,18 +112,3 @@ def generate_pdf(job_id: str, body: Layout, user_id: str = Depends(get_user_id))
 def delete_job(job_id: str, user_id: str = Depends(get_user_id)):
     job_service.delete_job(user_id, job_id)
     return {"ok": True}
-
-
-# --- legacy: old extension popup still POSTs here. Remove once the §9 popup redesign lands. ---
-
-class URLRequest(BaseModel):
-    url: str
-
-
-@router.post("/url")
-async def receive_and_scrape_url(payload: URLRequest):
-    if not payload.url:
-        raise HTTPException(status_code=400, detail="No URL provided")
-    scraped_data = await ScraperService.scrape_url(payload.url)
-    return {"status": "success", "url": payload.url, "scraped_data": scraped_data,
-            "redirect_url": "http://localhost:5173/generate?url=" + quote(payload.url, safe="")}

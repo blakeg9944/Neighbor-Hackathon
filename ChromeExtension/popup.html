@@ -4,25 +4,48 @@
   <meta charset="utf-8">
   <style>
     body {
-      width: 220px;
-      padding: 12px;
+      width: 280px;
+      padding: 16px;
       font-family: system-ui, sans-serif;
+      color: #0f172a;
     }
     button {
       width: 100%;
-      padding: 8px;
+      padding: 10px;
       cursor: pointer;
+      border: 0;
+      border-radius: 6px;
+      background: #4f46e5;
+      color: white;
+      font-weight: 600;
     }
-    #status {
-      margin-top: 10px;
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+    #title {
+      margin: 16px 0 4px;
+      font-weight: 600;
+    }
+    #host, #status {
+      color: #64748b;
       font-size: 0.85em;
-      word-break: break-all;
+    }
+    #dashboard {
+      display: inline-block;
+      margin-top: 12px;
+      color: #4f46e5;
+      font-size: 0.85em;
     }
   </style>
 </head>
 <body>
-  <button id="sendBtn">Send Current URL</button>
+  <strong>Resume Adapter</strong>
+  <p id="title"></p>
+  <div id="host"></div>
   <div id="status"></div>
+  <button id="sendBtn" disabled>Make a Resume</button>
+  <a id="dashboard" href="#">Open dashboard</a>
   <script src="popup.js"></script>
 </body>
 </html>

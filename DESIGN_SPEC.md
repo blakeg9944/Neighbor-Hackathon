@@ -13,7 +13,7 @@
 Users build a **resume detail bank**: a pool of small "tiles" (one resume entry each) that holds more than fits on one resume. Given a job posting URL, the app picks the relevant tiles, lets the user rearrange them by drag-and-drop, and generates a tailored PDF. A dashboard keeps one card per job with a job summary, the saved layout, and every PDF generated for it.
 
 **Entry points for tailoring**
-1. **Chrome extension:** on a job posting, the user clicks the extension icon. A small popup shows the page and a **"Make a Resume"** button. Clicking it opens `http://localhost:5173/generate?url=<posting url>`, and generation starts automatically.
+1. **Chrome extension:** on a job posting, the user clicks the extension icon. A small popup shows the page and a **"Make a Resume"** button. Clicking it opens `http://localhost:5173/generate?url=<posting url>&source=extension`. If signed out, the website prompts for login and resumes generation afterward.
 2. **Website:** user pastes a URL into the input on the dashboard or the `/generate` page.
 
 ---
@@ -28,7 +28,7 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | Schema | **Evolve the existing schema** (the `init` migration + the database guy's `app/db/` layer) instead of replacing it. See §5. |
 | Supabase | One shared **hosted** project. Migrations are pushed with `supabase db push`. |
 | Auth | Google OAuth through Supabase (set up by **James**), plus an **email/password fallback**. Sessions **persist**, so the user stays signed in across visits (§8.4). |
-| Extension | Popup with a **"Make a Resume"** button that **opens the website**. The extension makes no API calls and needs no auth of its own. |
+| Extension | Popup with a **"Make a Resume"** button that **opens the website**. The extension makes no API calls and needs no auth of its own; the website authenticates the user before generation. |
 | Job text | Backend fetches the URL. If the fetch fails or returns too little text, the UI asks the user to **paste the description**. |
 | Tailoring | The LLM **selects and orders** existing tiles and does **not rewrite** them. *(Rewriting is a stretch goal.)* |
 | PDF | Rendered **in the backend with ReportLab** (pure Python, works on Windows) and stored in the Supabase `resumes` bucket. |
@@ -79,12 +79,12 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | Path | Status |
 |---|---|
 | `backend/app/main.py` | FastAPI app + CORS (`*`) + includes `routes.router` |
-| `backend/app/routes.py` | `POST /api/url`: working scraper (title, meta description, h1s, 300-char sample). **Will be replaced** by the §6 routes; its scraping code lives in `services/scraper.py`. |
+| `backend/app/routes.py` | FastAPI app routes; `/api/jobs` and `/api/url` use the shared job-creation flow. |
 | `backend/app/auth.py` | `get_user_id` dependency (validates the Supabase JWT) |
 | `backend/app/db/` | Data-access helpers per table (`profiles`, `source_resumes`, `resume_items`, `jobs`, `generated_resumes`, `storage`), all filtered by `user_id`. Built for the init schema and **need small updates** for §5. |
 | `backend/run.py` | `uvicorn app.main:app --reload` on port 8000 |
 | `frontend/src/lib/supabase.ts` | Supabase client, `signInWithGoogle`, `api()` helper. No React app yet. |
-| `ChromeExtension/` | Popup that POSTs to `/api/url`. **Will be changed** to the §9 design. |
+| `ChromeExtension/` | Popup that opens the website with the active-tab URL; the authenticated frontend submits it to `/api/url`. |
 | `supabase/migrations/…_init.sql` | Original schema; §5 adds a second migration on top. |
 
 ---
@@ -203,7 +203,7 @@ The backend uses the service role key (which bypasses RLS), so **every query mus
 - All routes except `/api/health` require `Authorization: Bearer <supabase access token>` (`Depends(get_user_id)` from `app/auth.py`).
 - **Every route returns JSON** (the frontend `api()` helper calls `res.json()`), so deletes return `{"ok": true}`, not 204.
 - Machine-readable errors use `{"detail": {"code": "...", "message": "..."}}`.
-- `POST /api/url` (the current scraper test route) is removed once `/api/jobs` works.
+- `POST /api/url` accepts `{url, description?}` and returns `JobDetail`, just like `/api/jobs`. It requires auth and is used for extension-originated URLs; signed-out users are redirected to login by the website before it calls the endpoint.
 
 ### 6.1 Shared types (TypeScript; mirror exactly in Pydantic `backend/app/schemas.py`)
 
@@ -259,6 +259,7 @@ interface JobDetail extends Job {
 | `PATCH /api/tiles/{id}` | `{category?, text?}` | `Tile` | category dropdown change / text edit |
 | `DELETE /api/tiles/{id}` | – | `{ok: true}` | **permanent** delete from bank |
 | `POST /api/jobs` | `{url: string, description?: string}` | `JobDetail` | See flow §6.3. Slow (10–30 s). |
+| `POST /api/url` | `{url: string, description?: string}` | `JobDetail` | Authenticated alias of `/api/jobs` for URLs originating from the extension; website login runs first if needed. |
 | `GET /api/jobs` | – | `JobListItem[]` | the user's saved jobs, newest first |
 | `GET /api/jobs/{id}` | – | `JobDetail` | 404 if the user has no `saved_jobs` row for it |
 | `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits |
@@ -401,11 +402,11 @@ frontend/src/
 │ Open dashboard               │  ← small link
 └──────────────────────────────┘
 ```
-- **Make a Resume** opens `chrome.tabs.create({ url: SITE_URL + "/generate?url=" + encodeURIComponent(tab.url) })`, then `window.close()`.
+- **Make a Resume** opens `chrome.tabs.create({ url: SITE_URL + "/generate?url=" + encodeURIComponent(tab.url) + "&source=extension" })`, then `window.close()`.
 - **Open dashboard** opens `SITE_URL + "/"`.
 - If the active tab isn't an `http(s)` page (e.g. `chrome://`), disable the button and show "Open a job posting first".
 - `const SITE_URL = "http://localhost:5173";` at the top of `popup.js`.
-- **No `fetch` to the backend** and no auth in the extension; the website handles login (§8.4) and generation.
+- **No `fetch` to the backend** and no auth in the extension; the website handles login (§8.4) and calls `/api/url` for extension-originated URLs.
 - `manifest.json`: keep `"action": {"default_popup": "popup.html"}` and `"permissions": ["activeTab"]`; **remove `host_permissions`**; update the description.
 - Load via `chrome://extensions`, then Developer mode, then "Load unpacked", then select `ChromeExtension/`. Click the reload icon there after edits.
 
@@ -456,7 +457,7 @@ Each person owns specific files. **Don't edit another person's files without ask
 ### Extension guy: extension + scraping + demo prep
 **Owns:** `ChromeExtension/**`, `backend/app/services/scraper.py`, `demo/**`
 1. **Popup redesign** (§9): "Make a Resume" opens the website; remove the backend `fetch` and `host_permissions`. About 30–45 min.
-2. **`services/scraper.py`**: `fetch_job_text(url) -> str` is implemented (full page text, JSON-LD first, §7). Tune it on real job sites. `/api/url` stays until the popup redesign lands.
+2. **`services/scraper.py`**: `fetch_job_text(url) -> str` is implemented (full page text, JSON-LD first, §7). Tune it on real job sites; `/api/jobs` and `/api/url` both use it through the shared job-creation flow.
 3. **Demo prep:** collect 3–4 job URLs that scrape cleanly (Greenhouse/Lever/Ashby), save one job description as text for the paste fallback, and put a realistic sample resume PDF in `demo/`.
 4. **QA:** from Checkpoint 1 on, run the demo flow end to end on his machine and report bugs to the owner.
 5. Own the **demo script** (§13) and run the rehearsals.
@@ -475,7 +476,7 @@ Each person owns specific files. **Don't edit another person's files without ask
 2. `schemas.py`: Pydantic models mirroring §6.1.
 3. **Early:** all `/api` routes from §6.2 wired to the stub `llm`/`pdf`/`scrape` functions, so the website can integrate for real ASAP.
 4. Real persistence and logic: tiles CRUD (`text`↔`content_text`), profile, `/resume/parse`, the `/jobs` flow with layout validation (§6.3), resolved layouts (§4.3), `/pdfs` (render, upload, `generated_resumes` row, signed URL).
-5. Add `openai`, `pypdf`, `reportlab`, `python-multipart` to `requirements.txt`; add `OPENAI_MODEL` to `.env.example`. Remove `/api/url` once `/api/jobs` works.
+5. Add `openai`, `pypdf`, `reportlab`, `python-multipart` to `requirements.txt`; add `OPENAI_MODEL` to `.env.example`. Keep `/api/url` as an authenticated alias for extension-originated URLs.
 
 ---
 
