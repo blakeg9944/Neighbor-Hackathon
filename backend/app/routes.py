@@ -11,17 +11,14 @@ router = APIRouter()
 class URLRequest(BaseModel):
     url: str  # or HttpUrl for strict URL validation
 
+# app/routes.py
 @router.post("/api/url")
 async def receive_url(payload: URLRequest):
-    if not payload.url:
-        raise HTTPException(status_code=400, detail="No URL provided")
-
-    print(f"Received URL: {payload.url}")
-
-    # Example: save to Supabase via the db layer (app/db/). Add
-    # `user_id: str = Depends(get_user_id)` (from app.auth) to the signature, then:
-    # from app.db import jobs
-    # job = jobs.create(user_id, description, url=payload.url)
-    # jobs.save(user_id, job["id"])
-
-    return {"status": "success", "url": payload.url}
+    # Process the URL or create a DB entry with an ID
+    item_id = 123 
+    
+    return {
+        "status": "success",
+        "url": payload.url,
+        "redirect_url": f"http://localhost:3000/" # Change this so that it matches the frontend URL
+    }
