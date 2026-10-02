@@ -56,7 +56,7 @@ export interface Job {
   summary: string | null;
   bullets: string[];
   created_at: string;
-  fit?: number | null; // resume-vs-job similarity (~0..1); null until both are embedded
+  fit?: number | null; // calibrated resume-vs-job match, 0..1 (show as %); null until both are embedded
 }
 
 export interface JobListItem extends Job {

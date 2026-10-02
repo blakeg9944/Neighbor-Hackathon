@@ -64,7 +64,7 @@ class Job(BaseModel):
     summary: str | None = None
     bullets: list[str] = []
     created_at: str
-    fit: float | None = None  # cosine similarity resume vs job (0..1-ish); null until both are embedded
+    fit: float | None = None  # calibrated match 0..1 (job_service.calibrate_fit); null until both are embedded
 
 
 class JobListItem(Job):

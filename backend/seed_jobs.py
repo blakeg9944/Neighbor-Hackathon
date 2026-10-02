@@ -2,6 +2,7 @@
 
 Usage (from backend/, venv active):
     python seed_jobs.py urls.txt [--workers 4]
+    python seed_jobs.py --reembed          # re-embed every job already in the pool (after changing embed_job)
 
 urls.txt: one job posting URL per line. Blank lines and lines starting with # are ignored.
 Each URL is scraped, summarized, and embedded, the same way POST /api/jobs does it,
@@ -14,19 +15,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.db import jobs, supabase
 from app.services import llm
-from app.services.job_service import MIN_JOB_TEXT
+from app.services.job_service import MIN_JOB_TEXT, embed_job
 from app.services.scraper import fetch_job_text
 
 
 def _has_embedding(job_id: str) -> bool:
     return bool(supabase.table("jobs").select("id").eq("id", job_id).not_.is_("embedding", "null").execute().data)
-
-
-def _embed(job: dict, text: str) -> None:
-    parts = [job.get("title"), job.get("company"), job.get("summary"), *(job.get("bullets") or []), text]
-    vec = llm.embed("\n".join(p for p in parts if p))
-    if vec:
-        jobs.set_embedding(job["id"], vec)
 
 
 def seed_one(url: str) -> tuple[str, str]:
@@ -36,7 +30,7 @@ def seed_one(url: str) -> tuple[str, str]:
         if existing and existing.get("summary"):
             if _has_embedding(existing["id"]):
                 return "skipped", existing.get("title") or ""
-            _embed(existing, existing.get("description") or "")
+            embed_job(existing)
             return "embedded", existing.get("title") or ""
 
         text = fetch_job_text(url)
@@ -47,7 +41,7 @@ def seed_one(url: str) -> tuple[str, str]:
             job = jobs.update(existing["id"], description=text, **info)
         else:
             job = jobs.create(None, text, url=url, **info)  # created_by = null: seeded, not a user's job
-        _embed(job, text)
+        embed_job(job)
         return "added", f"{job.get('title')} @ {job.get('company')}"
     except Exception as e:
         return "failed", f"{type(e).__name__}: {e}"
@@ -60,11 +54,24 @@ def read_urls(path: str) -> list[str]:
     return list(dict.fromkeys(urls))  # de-duplicate, keep order
 
 
+def reembed_all(workers: int) -> None:
+    pool = supabase.table("jobs").select("id, title, company, summary, bullets").execute().data
+    print(f"Re-embedding {len(pool)} jobs...")
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+        list(ex.map(embed_job, pool))
+    print("Done.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bulk-add job URLs to the global job pool.")
-    parser.add_argument("file", help="text file with one job URL per line")
+    parser.add_argument("file", nargs="?", help="text file with one job URL per line")
+    parser.add_argument("--reembed", action="store_true", help="re-embed every job already in the pool")
     parser.add_argument("--workers", type=int, default=4, help="URLs processed in parallel (default 4)")
     args = parser.parse_args()
+    if args.reembed:
+        return reembed_all(args.workers)
+    if not args.file:
+        parser.error("give a URL file, or --reembed")
 
     urls = read_urls(args.file)
     if not urls:

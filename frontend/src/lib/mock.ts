@@ -4,7 +4,7 @@
 import { ApiError } from "./supabase";
 import {
   CATEGORY_ORDER, emptySections,
-  type Category, type GeneratedPdf, type JobDetail, type JobListItem, type Layout, type Profile,
+  type Category, type GeneratedPdf, type Job, type JobDetail, type JobListItem, type Layout, type Profile,
   type ProfileUpdate, type ResolvedLayout, type Tile,
 } from "./types";
 
@@ -141,6 +141,20 @@ function guessJob(url: string) {
   };
 }
 
+const poolJob = (n: number, title: string, company: string, fit: number, bullets: string[]): Job => ({
+  id: `pool-${n}`, url: `https://boards.greenhouse.io/${company.toLowerCase().replace(/\W+/g, "")}/jobs/${1000 + n}`,
+  title, company, fit, bullets, created_at: now(),
+  summary: `${company} is hiring a ${title}. ${bullets[0]}.`,
+});
+const MOCK_POOL: Job[] = [
+  poolJob(1, "Backend Software Engineer", "Acme Corp", 0.56, ["Build Python APIs on AWS", "PostgreSQL and Redis", "Kafka a plus"]),
+  poolJob(2, "Full-Stack Engineer Intern", "Campus Labs", 0.52, ["React + TypeScript frontends", "FastAPI services", "Ship features weekly"]),
+  poolJob(3, "Data Engineer", "Northwind", 0.47, ["Design ETL pipelines", "SQL and dbt", "Airflow orchestration"]),
+  poolJob(4, "ML Engineer Intern", "Lumen AI", 0.45, ["Train PyTorch models", "Deploy inference services", "Experiment tracking"]),
+  poolJob(5, "IT Support Specialist", "Wasatch Health", 0.36, ["Help desk tickets", "Windows and Office 365", "Hardware setup"]),
+  poolJob(6, "Inside Sales Rep", "Summit Solar", 0.24, ["Outbound calls", "CRM upkeep", "Weekly pay plus commission"]),
+];
+
 export const mockApi = {
   async getMe() {
     await delay();
@@ -227,6 +241,11 @@ export const mockApi = {
       const { layout: _l, pdfs, ...rest } = j;
       return { ...rest, pdf_count: pdfs.length, latest_pdf_at: pdfs.at(-1)?.created_at ?? null };
     });
+  },
+  async recommendedJobs(limit = 10, offset = 0): Promise<Job[]> {
+    await delay(600);
+    const saved = new Set(state.jobs.map((j) => j.url));
+    return MOCK_POOL.filter((j) => !saved.has(j.url)).slice(offset, offset + limit);
   },
   async getJob(id: string) {
     await delay();
