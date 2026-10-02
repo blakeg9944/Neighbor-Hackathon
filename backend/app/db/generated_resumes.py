@@ -33,6 +33,12 @@ def list_for_user(user_id: str) -> list[dict]:
         .order("created_at", desc=True).execute().data
 
 
+def list_for_job(user_id: str, job_id: str) -> list[dict]:
+    """PDF history for one job card, newest first (no `content` blob)."""
+    return supabase.table(T).select("id, storage_path, created_at").eq("user_id", user_id) \
+        .eq("job_id", job_id).order("created_at", desc=True).execute().data
+
+
 def update(user_id: str, gen_id: str, **fields) -> dict | None:
     return first(supabase.table(T).update(fields).eq("user_id", user_id).eq("id", gen_id).execute().data)
 

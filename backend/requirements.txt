@@ -1,10 +1,11 @@
 fastapi
+uvicorn
 supabase
 python-dotenv
 pydantic
-uvicorn
 httpx
 beautifulsoup4
 openai
 pypdf
 reportlab
+python-multipart

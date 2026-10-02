@@ -9,6 +9,10 @@ def create(user_id: str, raw_text: str, storage_path: str | None = None) -> dict
     ).execute().data[0]
 
 
+def set_storage_path(user_id: str, source_id: str, storage_path: str) -> None:
+    supabase.table(T).update({"storage_path": storage_path}).eq("user_id", user_id).eq("id", source_id).execute()
+
+
 def get(user_id: str, source_id: str) -> dict | None:
     return first(supabase.table(T).select("*").eq("user_id", user_id).eq("id", source_id).execute().data)
 

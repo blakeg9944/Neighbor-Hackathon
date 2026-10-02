@@ -37,7 +37,8 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | X button | **Review page:** X removes the tile from *this* resume only and moves it to the Unused sidebar. **Bank page:** X **permanently deletes** the tile from the bank. |
 | Resume header | Name, email, phone, location and links come from the **profile** (editable on the Bank page), not from tiles. |
 | Hosting | Demo runs on **localhost**. AWS *(stretch)*. |
-| Out of scope | RAG, embeddings, vector search, job matching. The existing embedding columns and RPCs stay in the DB **unused**. |
+| Job matching | **In scope (added):** a **fit score** per job (cosine similarity of the user's whole-bank embedding vs the job's embedding, via the existing `job_fit`/`match_jobs` RPCs) and **recommended jobs** from the global pool. Embeddings use `text-embedding-3-small`. Fit is `null` until both sides are embedded (or with no OpenAI key). |
+| Out of scope | RAG / per-tile retrieval. |
 
 ---
 
@@ -54,8 +55,8 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
                                                          ┌──────────────────────────────┐
                                                          │ FastAPI :8000  (/api/...)    │
                                                          │  routes, schemas, db/  (DB)  │
-                                                         │  llm.py, pdf.py   (openai)   │
-                                                         │  scrape.py     (extension)   │
+                                                         │  services/llm,pdf (openai)   │
+                                                         │  services/scraper.py (ext.)  │
                                                          └───────┬──────────────┬───────┘
                                                                  │ service role │ HTTPS
                                                                  ▼              ▼
@@ -78,7 +79,7 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | Path | Status |
 |---|---|
 | `backend/app/main.py` | FastAPI app + CORS (`*`) + includes `routes.router` |
-| `backend/app/routes.py` | `POST /api/url`: working scraper (title, meta description, h1s, 300-char sample). **Will be replaced** by the §6 routes; its scraping code **moves into `scrape.py`**. |
+| `backend/app/routes.py` | `POST /api/url`: working scraper (title, meta description, h1s, 300-char sample). **Will be replaced** by the §6 routes; its scraping code lives in `services/scraper.py`. |
 | `backend/app/auth.py` | `get_user_id` dependency (validates the Supabase JWT) |
 | `backend/app/db/` | Data-access helpers per table (`profiles`, `source_resumes`, `resume_items`, `jobs`, `generated_resumes`, `storage`), all filtered by `user_id`. Built for the init schema and **need small updates** for §5. |
 | `backend/run.py` | `uvicorn app.main:app --reload` on port 8000 |
@@ -185,7 +186,7 @@ alter table public.saved_jobs
 - `profiles.get` also selects `phone, location, links`.
 - Add `jobs` helpers: `get_saved(user_id, job_id)` (with `layout`), `set_layout(user_id, job_id, layout)`, and `list_saved` including `layout`. Keep `jobs.create` URL dedupe.
 - Add `generated_resumes.list_for_job(user_id, job_id)`, newest first.
-- The embedding helpers stay but are unused.
+- Embeddings are used for fit scores: `profiles.embedding` is refreshed (background task) after the bank changes; `jobs.embedding` is set when a job is summarized. Helpers: `jobs.fit`, `jobs.saved_fits`, `jobs.match_for_user`, `jobs.get_many`.
 
 **Storage paths** (via `db.storage`)
 - Uploaded resumes: bucket `uploads`, `{user_id}/{source_resume_id}.pdf`
@@ -231,6 +232,7 @@ interface ResolvedLayout {               // read form
 interface Job {                          // DB: jobs (+ saved_jobs.created_at as created_at)
   id: string; url: string; title: string | null; company: string | null;
   summary: string | null; bullets: string[]; created_at: string;
+  fit: number | null;                    // resume-vs-job similarity (~0..1); null until both are embedded
 }
 interface JobListItem extends Job {
   pdf_count: number; latest_pdf_at: string | null;
@@ -261,15 +263,16 @@ interface JobDetail extends Job {
 | `GET /api/jobs/{id}` | – | `JobDetail` | 404 if the user has no `saved_jobs` row for it |
 | `PUT /api/jobs/{id}/layout` | `Layout` | `{ok: true}` | save review edits |
 | `POST /api/jobs/{id}/pdfs` | `Layout` | `GeneratedPdf` | saves layout, renders PDF, uploads, inserts `generated_resumes` row |
-| `DELETE /api/jobs/{id}` | – | `{ok: true}` | *(stretch)* removes the user's `saved_jobs` row |
+| `GET /api/jobs/recommended?limit=10` | – | `Job[]` | **(added)** global-pool jobs ranked by `fit`, excluding ones the user already saved. `created_at` = when the job entered the pool. Empty until embeddings exist. |
+| `DELETE /api/jobs/{id}` | – | `{ok: true}` | removes the user's `saved_jobs` row |
 
 ### 6.3 `POST /api/jobs` flow
 1. If the user already has a `saved_jobs` row for this URL's job **with a layout**, return its `JobDetail` as-is.
 2. If the user has 0 tiles, return **400** `{"detail": {"code": "EMPTY_BANK"}}`.
 3. Get the job:
    - If the global `jobs` row exists with a `summary`, reuse it (no fetch or LLM call).
-   - Otherwise, job text = `description` if provided, else `scrape.fetch_job_text(url)`. If that raises or returns < 500 chars, return **422** `{"detail": {"code": "FETCH_FAILED"}}`; the frontend shows a paste box and re-POSTs with `description`.
-   - Then `llm.summarize_job(text, url)` returns title, company, summary, bullets. Store them with `jobs.create`/`update` (`description` = text).
+   - Otherwise, job text = `description` if provided, else `services.scraper.fetch_job_text(url)`. If that raises or returns < 500 chars, return **422** `{"detail": {"code": "FETCH_FAILED"}}`; the frontend shows a paste box and re-POSTs with `description`.
+   - Then `llm.summarize_job(text, url)` returns title, company, summary, bullets. Store them with `jobs.create`/`update` (`description` = text), then `llm.embed` the job for fit scores.
 4. `llm.select_tiles(job, text, tiles)` returns a `Layout`. **The backend validates it**: drop unknown IDs, de-duplicate, put every bank tile not placed into `unused`.
 5. Upsert `saved_jobs (user_id, job_id, layout)` and return `JobDetail` (`pdfs: []`).
 
@@ -280,7 +283,7 @@ interface JobDetail extends Job {
 Files live in `backend/app/`. **The function signatures below are fixed.** Owners commit **stubs returning realistic hardcoded data within the first 30 minutes** so the routes can be wired up immediately.
 
 ```python
-# scrape.py  (extension guy). Move the existing scraping code from routes.py here.
+# services/scraper.py  (extension guy). Lives next to ScraperService.
 def fetch_job_text(url: str) -> str: ...
     # Sync httpx.get, browser User-Agent, follow redirects, 15 s timeout.
     # 1) If a <script type="application/ld+json"> with "@type": "JobPosting" exists, use its
@@ -288,15 +291,17 @@ def fetch_job_text(url: str) -> str: ...
     # 2) Else soup.get_text(" ") after removing script/style/nav/header/footer.
     # Collapse whitespace, truncate to ~15,000 chars. Raise an exception on HTTP errors.
 
-# llm.py  (openai guy). Use OpenAI structured outputs (JSON schema / Pydantic).
+# services/llm.py  (openai guy). Use OpenAI structured outputs (JSON schema / Pydantic).
 def extract_tiles(resume_text: str) -> list[dict]: ...
     # -> [{"category": Category, "text": str}]  following §4.2
 def summarize_job(job_text: str, url: str) -> dict: ...
     # -> {"title": str, "company": str, "summary": str, "bullets": list[str]}  (5–8 bullets)
 def select_tiles(job: dict, job_text: str, tiles: list[dict]) -> dict: ...
     # tiles: [{"id","category","text"}] -> Layout dict {"sections": {...6 keys...}, "unused": [...]}
+def embed(text: str) -> list[float] | None: ...
+    # text-embedding-3-small (1536 dims); None when OPENAI_API_KEY is unset (stub mode)
 
-# pdf.py  (openai guy)
+# services/pdf.py  (openai guy)
 def pdf_to_text(data: bytes) -> str: ...            # pypdf, join page texts
 def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
     # sections: category -> ordered list of tile TEXTS (already resolved), in §4.1 order.
@@ -311,7 +316,7 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 - **extract_tiles:** one tile per entry. Keep the original wording **verbatim** (whitespace cleanup only). Put each entry's heading line first and its bullets as `• ` lines. Split listed courses out of education into a `coursework` tile. One tile per skill line. Put awards, certifications, volunteering, etc. in `other`. Never invent content.
 - **summarize_job:** factual and concise; bullets = the most important requirements/responsibilities.
 - **select_tiles:** choose the most relevant tiles and order each section by relevance. Rough one-page budget: education ≤2, coursework ≤1, skills ≤4, experience ≤4, projects ≤3, other ≤2. **Only use IDs from the input.** Normally keep tiles in their bank category.
-- Model: env `OPENAI_MODEL` (choose a current fast/cheap model that supports structured outputs). Low `temperature`.
+- Model: env `OPENAI_MODEL`, default `gpt-5.6-luna` (structured outputs; no `temperature`, since gpt-5 models reject it).
 
 ---
 
@@ -413,7 +418,7 @@ frontend/src/
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=
 OPENAI_API_KEY=
-OPENAI_MODEL=
+OPENAI_MODEL=gpt-5.6-luna
 ```
 **`frontend/.env`**
 ```
@@ -449,16 +454,16 @@ Each person owns specific files. **Don't edit another person's files without ask
 8. Visual polish.
 
 ### Extension guy: extension + scraping + demo prep
-**Owns:** `ChromeExtension/**`, `backend/app/scrape.py`, `demo/**`
+**Owns:** `ChromeExtension/**`, `backend/app/services/scraper.py`, `demo/**`
 1. **Popup redesign** (§9): "Make a Resume" opens the website; remove the backend `fetch` and `host_permissions`. About 30–45 min.
-2. **`scrape.py`**: move the scraping code from `routes.py` into `fetch_job_text(url) -> str` (full page text, JSON-LD first, §7). Tell the database guy when it's in, so he can remove `/api/url`.
+2. **`services/scraper.py`**: `fetch_job_text(url) -> str` is implemented (full page text, JSON-LD first, §7). Tune it on real job sites. `/api/url` stays until the popup redesign lands.
 3. **Demo prep:** collect 3–4 job URLs that scrape cleanly (Greenhouse/Lever/Ashby), save one job description as text for the paste fallback, and put a realistic sample resume PDF in `demo/`.
 4. **QA:** from Checkpoint 1 on, run the demo flow end to end on his machine and report bugs to the owner.
 5. Own the **demo script** (§13) and run the rehearsals.
 
 ### OpenAI guy: LLM + PDF
-**Owns:** `backend/app/llm.py`, `backend/app/pdf.py`, `backend/samples/**`
-1. Commit **stubs** for `llm.py` and `pdf.py` (§7) returning realistic hardcoded data, within 30 min.
+**Owns:** `backend/app/services/llm.py`, `backend/app/services/pdf.py`, `backend/samples/**`
+1. Commit **stubs** for `services/llm.py` and `services/pdf.py` (§7) returning realistic hardcoded data, within 30 min.
 2. `llm.extract_tiles`, then `llm.summarize_job`, then `llm.select_tiles` with structured outputs and §7.1 guidance.
 3. `pdf.pdf_to_text` (pypdf) and `pdf.render_resume` (ReportLab). Test standalone with sample tiles until the PDF looks good.
 4. Test scripts with sample resumes and jobs; tune prompts so tiles follow §4.2 exactly.
