@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Resume Adapter",
+  "name": "Trimd",
   "version": "1.0",
   "description": "Tailor your resume to the job posting in the active tab.",
   "permissions": [
