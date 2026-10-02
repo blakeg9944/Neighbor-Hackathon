@@ -15,6 +15,7 @@ jobs:
           username: ubuntu
           key: ${{ secrets.SSH_KEY }}
           script: |
+            set -e
             cd ~/Neighbor-Hackathon && git pull
             ~/venv/bin/pip install -r backend/requirements.txt
             sudo systemctl restart trimdcv-api
