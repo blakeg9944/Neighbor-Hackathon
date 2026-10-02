@@ -194,6 +194,21 @@ export function TileEditor({
   );
 }
 
+/** The trimdcv mark. Transparent PNG; in dark mode it sits on white so the dark tie stays visible. */
+export function Logo({ className = "h-10 w-10" }: { className?: string }) {
+  return <img src="/logo.png" alt="" className={`flex-none p-px dark:bg-white ${className}`} />;
+}
+
+/** Wordmark: "trimd" in Geist (ink) + "cv" in Geist Mono (logo blue). Size it with a text-* class. */
+export function Wordmark({ className = "text-[22px]" }: { className?: string }) {
+  return (
+    <span className={`leading-none tracking-[-0.03em] whitespace-nowrap ${className}`} aria-label="trimdcv">
+      <span className="font-sans font-semibold text-ink">trimd</span>
+      <span className="font-mono font-medium text-brand">cv</span>
+    </span>
+  );
+}
+
 /** Square icon button for row actions (×). */
 export function IconButton({ className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (

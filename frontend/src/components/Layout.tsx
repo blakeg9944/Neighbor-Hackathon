@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { USE_MOCKS } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { readPref, writePref } from "../lib/storage";
-import { MonoLabel } from "./ui";
+import { Logo, MonoLabel, Wordmark } from "./ui";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: "▦", end: true },
@@ -62,11 +62,11 @@ export default function Layout() {
           collapsed ? "w-14" : "w-60"
         }`}
       >
-        <div className={`flex h-14 items-center border-b border-line font-semibold ${collapsed ? "justify-center" : "gap-2.5 px-4"}`}>
-          <span className="grid h-6 w-6 flex-none place-items-center bg-solid font-mono text-xs font-medium text-on-solid">R</span>
+        <div className={`flex h-14 items-center border-b border-line ${collapsed ? "justify-center" : "gap-2.5 px-3.5"}`}>
+          <Logo className="h-10 w-10" />
           {!collapsed && (
             <>
-              <span className="flex-1 truncate">Resume Adapter</span>
+              <Wordmark className="flex-1 text-[22px]" />
               <button onClick={toggle} title="Collapse sidebar" className="px-1 text-muted hover:text-ink">
                 «
               </button>

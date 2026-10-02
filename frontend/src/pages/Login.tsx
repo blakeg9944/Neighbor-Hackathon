@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
-import { Button, ErrorBanner, Spinner } from "../components/ui";
+import { Button, ErrorBanner, Logo, Spinner, Wordmark } from "../components/ui";
 import { useAuth } from "../lib/auth";
 import { signInWithGoogle } from "../lib/supabase";
 
@@ -29,9 +29,9 @@ export default function Login() {
   return (
     <div className="hatched flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm border border-line bg-bg">
-        <div className="flex h-14 items-center gap-2.5 border-b border-line px-5 font-semibold">
-          <span className="grid h-6 w-6 place-items-center bg-solid font-mono text-xs font-medium text-on-solid">R</span>
-          Resume Adapter
+        <div className="flex h-16 items-center gap-3 border-b border-line px-5">
+          <Logo className="h-11 w-11" />
+          <Wordmark className="text-[26px]" />
         </div>
         <div className="flex flex-col gap-5 p-6">
           <div>

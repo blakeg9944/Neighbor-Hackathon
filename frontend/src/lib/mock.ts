@@ -40,7 +40,7 @@ const SAMPLE_TILES: [Category, string, Record<string, unknown>?][] = [
   ["experience", "Teaching Assistant, State University CS Dept (Jan 2024 – Present)\n• Led weekly labs for 40 students in Data Structures\n• Wrote autograder tests used across 3 course sections",
     { title: "Teaching Assistant", organization: "State University CS Dept", location: null, start_date: "Jan 2024", end_date: "Present", bullets: ["Led weekly labs for 40 students in Data Structures", "Wrote autograder tests used across 3 course sections"] }],
   ["experience", "Barista, Bean There Café (2022 – 2023)\n• Trained 5 new hires on POS and opening procedures"],
-  ["projects", "Resume Adapter (Hackathon 2026)\n• Chrome extension + React app that tailors resumes to job postings with OpenAI"],
+  ["projects", "trimdcv (Hackathon 2026)\n• Chrome extension + React app that tailors resumes to job postings with OpenAI"],
   ["projects", "Campus Eats (React, FastAPI, Postgres)\n• Full-stack food ordering app used by 300+ students",
     { name: "Campus Eats", technologies: ["React", "FastAPI", "Postgres"], link: "github.com/alexr/campus-eats", date: "2024", bullets: ["Full-stack food ordering app used by 300+ students"] }],
   ["projects", "Stock Sentiment Bot\n• Scraped Reddit posts and classified sentiment with a fine-tuned BERT model"],

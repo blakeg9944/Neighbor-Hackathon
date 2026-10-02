@@ -1,4 +1,4 @@
-# Resume Adapter: Design Spec
+# trimdcv: Design Spec
 
 > **This document is the source of truth** for every human and AI agent on this project.
 > If you change an API shape, DB column, or LLM output format, update this file **in the same commit** and tell the team.
@@ -495,7 +495,7 @@ Mockup: `design/mockups/6-hybrid.html` (kept local, gitignored). Rules for any n
 **Behavior:** clicking the icon opens a small popup:
 ```
 ┌──────────────────────────────┐
-│ [icon] Resume Adapter        │
+│ [icon] trimdcv               │
 │                              │
 │ Senior SWE – Acme | Greenhouse│  ← active tab's title (truncated)
 │ boards.greenhouse.io         │  ← active tab's hostname
@@ -517,7 +517,7 @@ Mockup: `design/mockups/6-hybrid.html` (kept local, gitignored). Rules for any n
 On any other job **application** page (not the posting itself — application URLs usually differ), the same popup additionally shows a saved-job picker and two buttons:
 ```
 ┌──────────────────────────────┐
-│ [icon] Resume Adapter        │
+│ [icon] trimdcv               │
 │ ...(title/host as above)...  │
 │ [     Make a Resume      ]   │
 │ [ Select resume:  Acme SWE ▾]│  ← GET /api/jobs, pre-selected by title/company match

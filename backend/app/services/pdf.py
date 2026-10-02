@@ -292,7 +292,7 @@ def _build(profile, sections, t, f, labels, meta) -> tuple[bytes, int]:
     doc = SimpleDocTemplate(
         buf, pagesize=letter, leftMargin=margin_x, rightMargin=margin_x, topMargin=margin_y, bottomMargin=margin_y,
         title=f"{name} – Resume" + (f" – {job}" if job else ""), author=name,
-        subject=f"Resume for {job}" if job else "Resume", creator="Resume Adapter",
+        subject=f"Resume for {job}" if job else "Resume", creator="trimdcv",
     )
     pages = [0]
 

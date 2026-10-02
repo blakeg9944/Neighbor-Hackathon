@@ -1,4 +1,4 @@
-# Resume Adapter
+# trimdcv
 
 Build a bank of resume "tiles" once, then generate a tailored, one-page PDF resume for any job posting, from the website or with one click in the Chrome extension.
 

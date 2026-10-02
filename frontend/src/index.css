@@ -24,6 +24,7 @@
   --danger-bg: rgba(180, 35, 24, 0.06);
   --danger-line: rgba(180, 35, 24, 0.3);
   --ok: #067647;
+  --brand: #0062f4; /* logo blue, used by the "cv" in the wordmark */
   color-scheme: light;
 }
 
@@ -75,6 +76,7 @@
   --color-danger-bg: var(--danger-bg);
   --color-danger-line: var(--danger-line);
   --color-ok: var(--ok);
+  --color-brand: var(--brand);
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
 }
