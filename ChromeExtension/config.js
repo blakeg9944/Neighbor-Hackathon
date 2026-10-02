@@ -5,8 +5,8 @@ const ENVIRONMENTS = {
     backendUrl: "http://127.0.0.1:8000"
   },
   production: {
-    frontendUrl: "https://www.trimdcv.com/", // or CloudFront/custom domain
-    backendUrl: "https://www.trimdcv.com/"       
+    frontendUrl: "https://www.trimdcv.com", // or CloudFront/custom domain
+    backendUrl: "https://www.trimdcv.com"       
   }
 };
 

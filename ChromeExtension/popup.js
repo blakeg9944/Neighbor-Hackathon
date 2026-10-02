@@ -33,13 +33,12 @@ chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
 makeResumeButton.addEventListener("click", () => {
   if (!activeUrl) return;
   const query = new URLSearchParams({ url: activeUrl, source: "extension" });
-  // chrome.tabs.create({ url: `${SITE_URL}/generate?${query.toString()}` });
   chrome.tabs.create({ url: `${CONFIG.frontendUrl}/generate?${query.toString()}` });
   window.close();
 });
 
 document.getElementById("dashboard").addEventListener("click", (event) => {
   event.preventDefault();
-  chrome.tabs.create({ url: `${SITE_URL}/` });
+  chrome.tabs.create({ url: `${CONFIG.frontendUrl}` });
   window.close();
 });
