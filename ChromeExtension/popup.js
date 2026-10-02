@@ -3,7 +3,6 @@ document.getElementById('sendBtn').addEventListener('click', async () => {
   statusDiv.textContent = "Sending...";
 
   try {
-    // 1. Get the current active tab in the focused window
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab || !tab.url) {
@@ -11,8 +10,8 @@ document.getElementById('sendBtn').addEventListener('click', async () => {
       return;
     }
 
-    // 2. Post the URL to your external API endpoint
-    const response = await fetch("https://localhost:8000/endpoint", {
+    // Match your FastAPI server host, port, and route
+    const response = await fetch("http://127.0.0.1:8000/api/url", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -21,7 +20,9 @@ document.getElementById('sendBtn').addEventListener('click', async () => {
     });
 
     if (response.ok) {
+      const data = await response.json();
       statusDiv.textContent = "URL successfully sent!";
+      console.log("Server response:", data);
     } else {
       statusDiv.textContent = `Server error: ${response.status}`;
     }
