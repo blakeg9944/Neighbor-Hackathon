@@ -1,50 +1,135 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { USE_MOCKS } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { usePanel, useTheme } from "../lib/theme";
+import { IconButton, MonoLabel } from "./ui";
 
-const linkClass = ({ isActive }: { isActive: boolean }) =>
-  `rounded-md px-3 py-1.5 text-sm font-medium ${
-    isActive ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+const NAV = [
+  { to: "/", label: "Dashboard", icon: "▦", end: true },
+  { to: "/bank", label: "Resume Bank", icon: "☰", end: false },
+];
+
+const titleFor = (path: string) =>
+  path === "/" ? "Dashboard"
+  : path.startsWith("/bank") ? "Resume Bank"
+  : path.startsWith("/generate") ? "New Resume"
+  : path.includes("/review") ? "Review"
+  : "";
+
+const navClass = ({ isActive }: { isActive: boolean }) =>
+  `flex items-center gap-2.5 border-l-2 px-2.5 py-[7px] ${
+    isActive ? "border-accent bg-raise font-medium text-ink" : "border-transparent text-ink2 hover:bg-hover hover:text-ink"
   }`;
 
 export default function Layout() {
   const { user, signOut } = useAuth();
+  const [theme, toggleTheme] = useTheme();
+  const [panelOpen, setPanelOpen] = usePanel();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const initials = (user?.name ?? user?.email ?? "?")
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]!.toUpperCase())
+    .join("");
+
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
-          <NavLink to="/" className="flex items-center gap-2 font-semibold text-slate-900">
-            <img src="/icon48.png" alt="" className="h-7 w-7 [image-rendering:pixelated]" />
-            Resume Adapter
-          </NavLink>
-          <nav className="flex gap-1">
-            <NavLink to="/" end className={linkClass}>
-              Dashboard
+    <div className="flex min-h-screen">
+      {/* ---------- sidebar ---------- */}
+      <aside className="sticky top-0 hidden h-screen w-60 flex-none flex-col border-r border-line bg-side lg:flex">
+        <div className="flex h-14 items-center gap-2.5 border-b border-line px-4 font-semibold">
+          <span className="grid h-6 w-6 place-items-center bg-solid font-mono text-xs font-medium text-on-solid">R</span>
+          Resume Adapter
+        </div>
+        <div className="border-b border-line p-3">
+          <button
+            onClick={() => navigate("/generate")}
+            className="flex w-full items-center justify-between bg-solid px-3 py-2.5 font-medium text-on-solid hover:opacity-90"
+          >
+            ＋ New resume
+          </button>
+        </div>
+        <nav className="flex flex-col border-b border-line p-3">
+          <MonoLabel className="px-1 pb-1.5">Workspace</MonoLabel>
+          {NAV.map((n) => (
+            <NavLink key={n.to} to={n.to} end={n.end} className={navClass}>
+              <span className="w-4 text-center text-muted">{n.icon}</span>
+              {n.label}
             </NavLink>
-            <NavLink to="/bank" className={linkClass}>
-              Resume Bank
-            </NavLink>
-            <NavLink to="/generate" className={linkClass}>
-              New Resume
-            </NavLink>
-          </nav>
-          <div className="ml-auto flex items-center gap-3">
-            {USE_MOCKS && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                Mock data
+          ))}
+        </nav>
+        <div className="mt-auto border-t border-line px-4 py-3">
+          {USE_MOCKS && <MonoLabel className="mb-2 block !text-accent">● Mock data</MonoLabel>}
+          <div className="flex items-center gap-2.5">
+            {user?.avatarUrl ? (
+              <img src={user.avatarUrl} alt="" className="h-7 w-7 border border-line" />
+            ) : (
+              <span className="grid h-7 w-7 place-items-center border border-accent-line bg-accent-bg font-mono text-[11px] text-accent">
+                {initials}
               </span>
             )}
-            {user?.avatarUrl && <img src={user.avatarUrl} alt="" className="h-7 w-7 rounded-full" />}
-            <span className="hidden text-sm text-slate-600 sm:inline">{user?.name ?? user?.email}</span>
-            <button onClick={signOut} className="text-sm text-slate-500 hover:text-slate-900">
-              Sign out
-            </button>
+            <div className="min-w-0 flex-1">
+              <div className="truncate">{user?.name ?? "Signed in"}</div>
+              <div className="truncate text-xs text-muted">{user?.email}</div>
+            </div>
           </div>
+          <button onClick={signOut} className="mt-2 text-xs text-muted hover:text-ink">
+            Sign out
+          </button>
         </div>
-      </header>
-      <main className="mx-auto max-w-7xl px-4 py-8">
-        <Outlet />
+      </aside>
+
+      {/* ---------- main, framed by hatched gutters ---------- */}
+      <main className="hatched min-w-0 flex-1 px-0 lg:px-5">
+        <div className="min-h-screen border-x border-line bg-bg">
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-2.5 border-b border-line bg-bg px-5 lg:px-6">
+            <span className="font-medium">{titleFor(pathname)}</span>
+            <nav className="ml-3 flex gap-1 lg:hidden">
+              {NAV.map((n) => (
+                <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `px-2 py-1 text-sm ${isActive ? "text-accent" : "text-ink2"}`}>
+                  {n.label}
+                </NavLink>
+              ))}
+            </nav>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={toggleTheme}
+                className="flex h-8 items-center gap-1.5 border border-line px-2.5 text-ink2 hover:border-line2 hover:text-ink"
+                title="Toggle light / dark"
+              >
+                {theme === "dark" ? "☀" : "☾"} <MonoLabel className="!text-inherit">{theme === "dark" ? "Light" : "Dark"}</MonoLabel>
+              </button>
+              <button
+                onClick={() => setPanelOpen(!panelOpen)}
+                className={`hidden h-8 items-center gap-1.5 border px-2.5 lg:flex ${
+                  panelOpen ? "border-accent-line bg-accent-bg text-accent" : "border-line text-ink2 hover:border-line2 hover:text-ink"
+                }`}
+                title="Toggle side panel"
+              >
+                ◨ <MonoLabel className="!text-inherit">Panel</MonoLabel>
+              </button>
+            </div>
+          </header>
+          <Outlet />
+        </div>
       </main>
+
+      {/* ---------- optional right panel (contents TBD) ---------- */}
+      {panelOpen && (
+        <aside className="sticky top-0 hidden h-screen w-80 flex-none flex-col border-l border-line bg-panel lg:flex">
+          <div className="flex h-14 items-center justify-between border-b border-line px-4">
+            <MonoLabel>Panel</MonoLabel>
+            <IconButton onClick={() => setPanelOpen(false)} title="Close panel">
+              ✕
+            </IconButton>
+          </div>
+          <div className="m-4 border border-dashed border-line2 p-4 text-[13px] text-muted">
+            <MonoLabel>Content TBD</MonoLabel>
+            <p className="mt-2">Optional side panel. What goes here will be decided later.</p>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

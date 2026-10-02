@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Button, ErrorBanner, errorMessage, Spinner } from "../components/ui";
+import { Band, Button, ErrorBanner, errorMessage, GroupHeader, PageTitle, Spinner, UrlForm } from "../components/ui";
 import { Api } from "../lib/api";
 import { ApiError } from "../lib/supabase";
 
-const STAGES = ["Reading job posting…", "Summarizing the role…", "Picking your best tiles…", "Almost there…"];
+const STAGES = ["Reading job posting", "Summarizing the role", "Picking your best entries", "Laying out your resume"];
 
 type Status = "idle" | "loading" | "fetch_failed" | "empty_bank" | "error";
 
@@ -20,6 +20,7 @@ export default function Generate() {
   const fromExtension = params.get("source") === "extension";
 
   const run = async (jobUrl: string, desc?: string) => {
+    setUrl(jobUrl);
     setStatus("loading");
     setError(null);
     setStage(0);
@@ -51,66 +52,64 @@ export default function Generate() {
     return () => clearInterval(id);
   }, [status]);
 
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (url.trim()) run(url.trim());
-  };
-
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Tailor a resume</h1>
-        <p className="mt-1 text-sm text-slate-500">Paste a job posting link and we'll pick your most relevant tiles.</p>
-      </div>
-
-      <form onSubmit={onSubmit} className="flex gap-2">
-        <input
-          type="url"
-          required
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          disabled={status === "loading"}
-          placeholder="https://boards.greenhouse.io/company/jobs/123"
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none disabled:bg-slate-100"
+    <div>
+      <Band>
+        <PageTitle
+          kicker={fromExtension ? "From the Chrome extension" : "New resume"}
+          title="Tailor a resume"
+          sub="Paste a job posting link and we'll pick the most relevant entries from your bank."
         />
-        <Button type="submit" disabled={status === "loading"}>
-          Make a Resume
-        </Button>
-      </form>
+        <UrlForm initial={url} disabled={status === "loading"} onSubmit={(u) => run(u)} />
+      </Band>
 
       {status === "loading" && (
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-white py-12 shadow-sm">
-          <Spinner className="h-8 w-8 text-indigo-600" />
-          <div className="text-sm font-medium text-slate-700">{STAGES[stage]}</div>
-          <div className="max-w-md truncate px-4 text-xs text-slate-400">{url}</div>
-        </div>
+        <>
+          <GroupHeader right={<Spinner className="h-3.5 w-3.5 text-accent" />}>Working</GroupHeader>
+          {STAGES.map((s, i) => (
+            <div
+              key={s}
+              className={`flex items-center gap-4 border-b border-line px-5 py-3 lg:px-7 ${i > stage ? "text-muted" : ""}`}
+            >
+              <span className="font-mono text-[11px] text-muted">{String(i + 1).padStart(2, "0")}</span>
+              <span className="flex-1">{s}</span>
+              <span className="label-mono">
+                {i < stage ? <span className="text-ok">Done</span> : i === stage ? <span className="text-accent">Running</span> : "Queued"}
+              </span>
+            </div>
+          ))}
+          <div className="truncate px-5 py-3 font-mono text-xs text-muted lg:px-7">{url}</div>
+        </>
       )}
 
       {status === "fetch_failed" && (
-        <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-5">
-          <div>
-            <div className="font-medium text-amber-900">We couldn't read that page</div>
-            <div className="text-sm text-amber-800">
-              Some sites (like LinkedIn) block us. Paste the job description below instead.
-            </div>
+        <>
+          <GroupHeader>We couldn't read that page</GroupHeader>
+          <div className="flex flex-col gap-3 border-b border-line px-5 py-5 lg:px-7">
+            <p className="text-ink2">Some sites (like LinkedIn) block us. Paste the job description below instead.</p>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={10}
+              placeholder="Paste the full job description…"
+              className="border border-line2 bg-bg px-3 py-2 outline-none placeholder:text-muted focus:border-accent"
+            />
+            <Button
+              variant="primary"
+              className="self-end"
+              disabled={!description.trim()}
+              onClick={() => run(url.trim(), description)}
+            >
+              Continue →
+            </Button>
           </div>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={10}
-            placeholder="Paste the full job description…"
-            className="rounded-md border border-amber-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
-          />
-          <Button className="self-end" disabled={!description.trim()} onClick={() => run(url.trim(), description)}>
-            Continue
-          </Button>
-        </div>
+        </>
       )}
 
       {status === "empty_bank" && (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 text-sm text-indigo-900">
+        <div className="border-b border-line bg-accent-bg px-5 py-4 lg:px-7">
           Your resume bank is empty.{" "}
-          <Link to="/bank" className="font-medium underline">
+          <Link to="/bank" className="font-medium text-accent hover:underline">
             Upload your resume first
           </Link>
           , then try again.

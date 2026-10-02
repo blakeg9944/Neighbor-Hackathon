@@ -24,7 +24,7 @@ const uid = () => crypto.randomUUID();
 const delay = (ms = 300) => new Promise((r) => setTimeout(r, ms));
 
 const tile = (category: Category, text: string): Tile => ({
-  id: uid(), category, text, source_resume_id: null, created_at: now(),
+  id: uid(), category, text, data: null, source_resume_id: null, created_at: now(),
 });
 
 const SAMPLE_TILES: [Category, string][] = [

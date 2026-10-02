@@ -22,7 +22,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import PdfModal, { pdfFilename } from "../components/PdfModal";
-import { Button, CategoryBadge, ErrorBanner, errorMessage, Spinner, TileText } from "../components/ui";
+import { Band, Button, ErrorBanner, errorMessage, GroupHeader, IconButton, MonoLabel, PageTitle, Spinner, TileText } from "../components/ui";
 import { Api } from "../lib/api";
 import {
   CATEGORY_LABELS, CATEGORY_ORDER, toLayout,
@@ -66,8 +66,8 @@ export default function Review() {
   if (error && !job) return <ErrorBanner error={error} />;
   if (!job || !containers)
     return (
-      <div className="flex justify-center py-20 text-slate-400">
-        <Spinner />
+      <div className="flex justify-center py-20 text-muted">
+        <Spinner className="h-5 w-5" />
       </div>
     );
 
@@ -78,7 +78,7 @@ export default function Review() {
 
   const onDragStart = ({ active }: DragStartEvent) => setActiveId(String(active.id));
 
-  // Moving between containers happens during drag so the drop target previews the tile.
+  // Moving between containers happens during drag so the drop target previews the row.
   const onDragOver = ({ active, over }: DragOverEvent) => {
     if (!over) return;
     const from = findContainer(String(active.id));
@@ -171,44 +171,50 @@ export default function Review() {
 
   const activeTile = activeId ? tilesById.get(activeId) : undefined;
   const usedCount = CATEGORY_ORDER.reduce((n, c) => n + containers[c].length, 0);
+  // Running row numbers across all sections (01, 02, ...) in resume order.
+  const numberOf = new Map(CATEGORY_ORDER.flatMap((c) => containers[c]).map((t, i) => [t.id, i + 1]));
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link to="/" className="text-xs text-slate-500 hover:text-slate-800">
-            ← Dashboard
-          </Link>
-          <h1 className="text-2xl font-semibold text-slate-900">{job.title ?? "Tailored resume"}</h1>
-          <div className="text-sm text-slate-500">
-            {job.company} ·{" "}
-            <a href={job.url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
-              job posting ↗
-            </a>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">{dirty ? "Unsaved changes" : "All changes saved"}</span>
+    <div>
+      <Band className="flex flex-wrap items-end justify-between gap-4">
+        <PageTitle
+          kicker={
+            <>
+              <Link to="/" className="hover:text-ink">
+                Dashboard
+              </Link>{" "}
+              / Review{job.company ? ` · ${job.company}` : ""}
+            </>
+          }
+          title={job.title ?? "Tailored resume"}
+          sub={
+            <>
+              {job.company && <>{job.company} · </>}
+              <a href={job.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                job posting ↗
+              </a>{" "}
+              · drag rows to reorder or move them between sections
+            </>
+          }
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <MonoLabel className="mr-1">{dirty ? "Unsaved" : "Saved"}</MonoLabel>
           <Button
-            variant="secondary"
             onClick={repick}
             disabled={repicking}
-            title="Pick tiles again from your current resume bank (replaces this layout)"
+            title="Pick entries again from your current resume bank (replaces this layout)"
           >
-            {repicking ? <Spinner className="h-4 w-4" /> : null} Re-pick tiles
+            {repicking && <Spinner />} Re-pick
           </Button>
-          <Button variant="secondary" onClick={save} disabled={!dirty || saving}>
-            {saving ? <Spinner className="h-4 w-4" /> : null} Save
+          <Button onClick={save} disabled={!dirty || saving}>
+            {saving && <Spinner />} Save
           </Button>
-          <Button onClick={generate} disabled={generating || usedCount === 0}>
-            {generating ? <Spinner className="h-4 w-4" /> : null} Generate PDF
+          <Button variant="primary" onClick={generate} disabled={generating || usedCount === 0}>
+            {generating && <Spinner />} Generate PDF
           </Button>
         </div>
-      </div>
+      </Band>
       <ErrorBanner error={error} />
-      <p className="text-sm text-slate-500">
-        Drag tiles to reorder them or move them between sections. Drag from <b>Unused</b> to add, or click × to remove.
-      </p>
 
       <DndContext
         sensors={sensors}
@@ -218,22 +224,24 @@ export default function Review() {
         onDragEnd={onDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
-        <div className="grid items-start gap-6 lg:grid-cols-[1fr_340px]">
-          <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="grid items-start lg:grid-cols-[1fr_300px]">
+          <div className="border-line lg:border-r">
             {CATEGORY_ORDER.map((c) => (
-              <Container key={c} id={c} title={CATEGORY_LABELS[c]} tiles={containers[c]} onRemove={moveToUnused} />
+              <Section
+                key={c}
+                id={c}
+                title={`${CATEGORY_LABELS[c]} · ${containers[c].length}`}
+                tiles={containers[c]}
+                numberOf={numberOf}
+                onRemove={moveToUnused}
+              />
             ))}
           </div>
-          <div className="lg:sticky lg:top-20">
-            <Container
-              id="unused"
-              title={`Unused (${containers.unused.length})`}
-              tiles={containers.unused}
-              sidebar
-            />
+          <div className="lg:sticky lg:top-14 lg:max-h-[calc(100vh-3.5rem)] lg:overflow-y-auto">
+            <Section id="unused" title={`Unused · ${containers.unused.length}`} tiles={containers.unused} unused />
           </div>
         </div>
-        <DragOverlay>{activeTile ? <TileCard tile={activeTile} overlay /> : null}</DragOverlay>
+        <DragOverlay>{activeTile ? <Row tile={activeTile} overlay /> : null}</DragOverlay>
       </DndContext>
 
       <PdfModal pdf={pdf} filename={pdfFilename(job.title, job.company)} onClose={() => setPdf(null)} />
@@ -241,44 +249,33 @@ export default function Review() {
   );
 }
 
-function Container({
+function Section({
   id,
   title,
   tiles,
+  numberOf,
   onRemove,
-  sidebar = false,
+  unused = false,
 }: {
   id: ContainerId;
   title: string;
   tiles: Tile[];
+  numberOf?: Map<string, number>;
   onRemove?: (id: string) => void;
-  sidebar?: boolean;
+  unused?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
-    <section
-      className={
-        sidebar
-          ? "flex max-h-[calc(100vh-7rem)] flex-col rounded-xl border border-slate-200 bg-slate-100 p-4"
-          : ""
-      }
-    >
-      <h2 className="mb-2 border-b border-slate-200 pb-1 text-sm font-semibold uppercase tracking-wide text-slate-600">
-        {title}
-      </h2>
+    <section>
+      <GroupHeader>{title}</GroupHeader>
       <SortableContext items={tiles.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div
-          ref={setNodeRef}
-          className={`flex min-h-14 flex-col gap-2 rounded-lg p-1 transition ${sidebar ? "overflow-y-auto" : ""} ${
-            isOver ? "bg-indigo-50 ring-2 ring-indigo-200" : ""
-          }`}
-        >
+        <div ref={setNodeRef} className={`min-h-12 ${isOver ? "bg-accent-bg" : ""}`}>
           {tiles.map((t) => (
-            <SortableTile key={t.id} tile={t} onRemove={onRemove} showCategory={sidebar} />
+            <SortableRow key={t.id} tile={t} number={numberOf?.get(t.id)} onRemove={onRemove} unused={unused} />
           ))}
           {tiles.length === 0 && (
-            <div className="flex h-12 items-center justify-center rounded-md border border-dashed border-slate-300 text-xs text-slate-400">
-              Drop tiles here
+            <div className="mx-5 my-3 border border-dashed border-line2 py-2.5 text-center text-muted lg:mx-6">
+              <MonoLabel>Drop entries here</MonoLabel>
             </div>
           )}
         </div>
@@ -287,64 +284,56 @@ function Container({
   );
 }
 
-function SortableTile({
-  tile,
-  onRemove,
-  showCategory,
-}: {
-  tile: Tile;
-  onRemove?: (id: string) => void;
-  showCategory?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tile.id });
+function SortableRow(props: { tile: Tile; number?: number; onRemove?: (id: string) => void; unused?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.tile.id });
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={isDragging ? "opacity-40" : ""}
+      className={isDragging ? "opacity-30" : ""}
       {...attributes}
       {...listeners}
     >
-      <TileCard tile={tile} onRemove={onRemove} showCategory={showCategory} />
+      <Row {...props} />
     </div>
   );
 }
 
-function TileCard({
+function Row({
   tile,
+  number,
   onRemove,
-  showCategory,
+  unused,
   overlay,
 }: {
   tile: Tile;
+  number?: number;
   onRemove?: (id: string) => void;
-  showCategory?: boolean;
+  unused?: boolean;
   overlay?: boolean;
 }) {
   return (
     <div
-      className={`flex cursor-grab items-start gap-2 rounded-lg border border-slate-200 bg-white p-3 active:cursor-grabbing ${
-        overlay ? "rotate-1 shadow-xl ring-2 ring-indigo-300" : "shadow-sm hover:border-slate-300"
+      className={`group flex cursor-grab items-start gap-3 border-b border-line px-5 py-3 active:cursor-grabbing lg:px-6 ${
+        overlay ? "border border-accent bg-bg shadow-xl" : "bg-bg hover:bg-hover"
       }`}
     >
-      <span className="select-none pt-0.5 text-slate-300">⋮⋮</span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <TileText text={tile.text} compact />
-        {showCategory && (
-          <div>
-            <CategoryBadge category={tile.category} />
-          </div>
-        )}
+      <span className="pt-px text-line2 select-none group-hover:text-muted">⠿</span>
+      {number !== undefined && (
+        <span className="w-5 flex-none pt-0.5 font-mono text-[11px] text-muted">{String(number).padStart(2, "0")}</span>
+      )}
+      <div className="min-w-0 flex-1">
+        <TileText text={tile.text} />
+        {unused && <MonoLabel className="mt-1 block">{CATEGORY_LABELS[tile.category]}</MonoLabel>}
       </div>
       {onRemove && (
-        <button
+        <IconButton
           onClick={() => onRemove(tile.id)}
           onPointerDown={(e) => e.stopPropagation()}
-          title="Remove from this resume"
-          className="rounded px-1.5 text-lg leading-none text-slate-300 hover:bg-slate-100 hover:text-slate-700"
+          title="Remove from this resume (moves to Unused)"
         >
-          ×
-        </button>
+          ✕
+        </IconButton>
       )}
     </div>
   );

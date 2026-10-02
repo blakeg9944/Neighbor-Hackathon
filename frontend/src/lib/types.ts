@@ -13,16 +13,6 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   other: "Other",
 };
 
-// Full class strings so Tailwind can see them.
-export const CATEGORY_COLORS: Record<Category, string> = {
-  education: "bg-sky-100 text-sky-800 border-sky-200",
-  coursework: "bg-violet-100 text-violet-800 border-violet-200",
-  skills: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  experience: "bg-amber-100 text-amber-800 border-amber-200",
-  projects: "bg-rose-100 text-rose-800 border-rose-200",
-  other: "bg-slate-100 text-slate-700 border-slate-200",
-};
-
 export interface Profile {
   id: string;
   full_name: string | null;
@@ -37,7 +27,8 @@ export type ProfileUpdate = Partial<Omit<Profile, "id" | "email">>;
 export interface Tile {
   id: string;
   category: Category;
-  text: string;
+  text: string; // generated from `data` when data is present (DESIGN_SPEC §4.2)
+  data?: Record<string, unknown> | null; // structured fields per category; null = freeform
   source_resume_id: string | null;
   created_at: string;
 }
@@ -60,6 +51,7 @@ export interface Job {
   summary: string | null;
   bullets: string[];
   created_at: string;
+  fit?: number | null; // resume-vs-job similarity (~0..1); null until both are embedded
 }
 
 export interface JobListItem extends Job {

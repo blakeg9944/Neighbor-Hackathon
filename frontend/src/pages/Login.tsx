@@ -29,51 +29,50 @@ export default function Login() {
     // On success, onAuthStateChange sets the user and the <Navigate> above redirects.
   };
 
+  const input = "border border-line2 bg-bg px-3 py-2 outline-none placeholder:text-muted focus:border-accent";
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50 to-slate-100 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg">
-        <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <img src="/icon48.png" alt="" className="h-12 w-12 [image-rendering:pixelated]" />
-          <h1 className="text-xl font-semibold text-slate-900">Resume Adapter</h1>
-          <p className="text-sm text-slate-500">Tailor your resume to any job in seconds.</p>
+    <div className="hatched flex min-h-screen items-center justify-center p-4">
+      <div className="w-full max-w-sm border border-line bg-bg">
+        <div className="flex h-14 items-center gap-2.5 border-b border-line px-5 font-semibold">
+          <span className="grid h-6 w-6 place-items-center bg-solid font-mono text-xs font-medium text-on-solid">R</span>
+          Resume Adapter
         </div>
+        <div className="p-6">
+          <h1 className="text-2xl font-semibold tracking-[-0.02em]">{mode === "signin" ? "Sign in" : "Create account"}</h1>
+          <p className="mt-1 text-ink2">Tailor your resume to any job in seconds.</p>
 
-        <Button variant="secondary" className="w-full" onClick={() => signInWithGoogle(next)}>
-          <GoogleIcon /> Continue with Google
-        </Button>
-
-        <div className="my-5 flex items-center gap-3 text-xs text-slate-400">
-          <div className="h-px flex-1 bg-slate-200" /> or <div className="h-px flex-1 bg-slate-200" />
-        </div>
-
-        <form onSubmit={onEmail} className="flex flex-col gap-3">
-          <input
-            type="email"
-            required
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
-          />
-          <input
-            type="password"
-            required
-            minLength={6}
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
-          />
-          <ErrorBanner error={error} />
-          <Button type="submit" disabled={busy}>
-            {mode === "signin" ? "Sign in" : "Create account"}
+          <Button className="mt-6 w-full" onClick={() => signInWithGoogle(next)}>
+            <GoogleIcon /> Continue with Google
           </Button>
-        </form>
+
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-line" />
+            <span className="label-mono">or</span>
+            <div className="h-px flex-1 bg-line" />
+          </div>
+
+          <form onSubmit={onEmail} className="flex flex-col gap-3">
+            <input type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
+            <input
+              type="password"
+              required
+              minLength={6}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={input}
+            />
+            <ErrorBanner error={error} />
+            <Button type="submit" variant="primary" disabled={busy}>
+              {mode === "signin" ? "Sign in" : "Create account"}
+            </Button>
+          </form>
+        </div>
         <button
           onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-          className="mt-4 w-full text-center text-xs text-slate-500 hover:text-slate-800"
+          className="w-full border-t border-line px-6 py-3 text-left text-ink2 hover:bg-hover hover:text-ink"
         >
-          {mode === "signin" ? "No account? Create one" : "Have an account? Sign in"}
+          {mode === "signin" ? "No account? Create one →" : "Have an account? Sign in →"}
         </button>
       </div>
     </div>

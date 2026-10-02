@@ -1,28 +1,32 @@
-import { useEffect, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { CATEGORY_COLORS, CATEGORY_LABELS, CATEGORY_ORDER, type Category } from "../lib/types";
+import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from "react";
+import { CATEGORY_LABELS, CATEGORY_ORDER, type Category } from "../lib/types";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+// Shared building blocks for the hybrid design (design/mockups/6-hybrid.html):
+// square corners, hairline borders, Geist + Geist Mono, color tokens from index.css.
+
+type Variant = "primary" | "solid" | "secondary" | "ghost" | "danger";
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300",
-  secondary: "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:text-slate-400",
-  ghost: "text-slate-600 hover:bg-slate-100",
-  danger: "bg-red-600 text-white hover:bg-red-700",
+  primary: "border-accent bg-accent text-on-accent hover:border-solid hover:bg-solid hover:text-on-solid",
+  solid: "border-solid bg-solid text-on-solid hover:opacity-90",
+  secondary: "border-line2 bg-bg text-ink hover:bg-hover",
+  ghost: "border-transparent text-ink2 hover:bg-hover hover:text-ink",
+  danger: "border-danger bg-danger text-white hover:opacity-90",
 };
 
 export function Button({
-  variant = "primary",
+  variant = "secondary",
   className = "",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex h-[34px] items-center justify-center gap-2 border px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
     />
   );
 }
 
-export function Spinner({ className = "h-5 w-5" }: { className?: string }) {
+export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <span
       className={`inline-block animate-spin rounded-full border-2 border-current border-t-transparent ${className}`}
@@ -30,11 +34,71 @@ export function Spinner({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-export function CategoryBadge({ category }: { category: Category }) {
+export function MonoLabel({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <span className={`label-mono ${className}`}>{children}</span>;
+}
+
+/** Full-width band header used above each list group: "EDUCATION · 1". */
+export function GroupHeader({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[category]}`}>
-      {CATEGORY_LABELS[category]}
-    </span>
+    <div className="flex items-center gap-3 border-b border-line bg-panel px-5 py-2 lg:px-7">
+      <MonoLabel>{children}</MonoLabel>
+      {right && <div className="ml-auto">{right}</div>}
+    </div>
+  );
+}
+
+/** Top-of-page section with a bottom hairline. */
+export function Band({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <section className={`border-b border-line px-5 py-7 lg:px-7 ${className}`}>{children}</section>;
+}
+
+export function PageTitle({ kicker, title, sub }: { kicker?: ReactNode; title: ReactNode; sub?: ReactNode }) {
+  return (
+    <div>
+      {kicker && <MonoLabel className="mb-1.5 block">{kicker}</MonoLabel>}
+      <h1 className="text-[30px] leading-tight font-semibold tracking-[-0.025em]">{title}</h1>
+      {sub && <p className="mt-1.5 max-w-2xl text-ink2">{sub}</p>}
+    </div>
+  );
+}
+
+/** "URL | input | Make a Resume →" joined control. */
+export function UrlForm({
+  initial = "",
+  disabled = false,
+  onSubmit,
+}: {
+  initial?: string;
+  disabled?: boolean;
+  onSubmit: (url: string) => void;
+}) {
+  const [url, setUrl] = useState(initial);
+  useEffect(() => setUrl(initial), [initial]);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (url.trim()) onSubmit(url.trim());
+  };
+  return (
+    <form onSubmit={submit} className="mt-5 flex max-w-3xl border border-line2 bg-bg">
+      <span className="label-mono grid place-items-center border-r border-line px-3">URL</span>
+      <input
+        type="url"
+        required
+        value={url}
+        disabled={disabled}
+        onChange={(e) => setUrl(e.target.value)}
+        placeholder="https://boards.greenhouse.io/company/jobs/123"
+        className="min-w-0 flex-1 bg-transparent px-3 py-2.5 outline-none placeholder:text-muted disabled:opacity-60"
+      />
+      <button
+        type="submit"
+        disabled={disabled}
+        className="border-l border-accent bg-accent px-4 font-medium whitespace-nowrap text-on-accent transition-colors hover:border-solid hover:bg-solid hover:text-on-solid disabled:opacity-50"
+      >
+        Make a Resume →
+      </button>
+    </form>
   );
 }
 
@@ -51,7 +115,7 @@ export function CategorySelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as Category)}
-      className={`rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-indigo-500 focus:outline-none ${className}`}
+      className={`border border-line bg-bg px-1.5 py-1 text-xs text-ink2 outline-none focus:border-accent ${className}`}
     >
       {CATEGORY_ORDER.map((c) => (
         <option key={c} value={c}>
@@ -62,25 +126,37 @@ export function CategorySelect({
   );
 }
 
-/** Renders tile text per DESIGN_SPEC §4.2: bold first line, "• " lines as bullets. */
-export function TileText({ text, compact = false }: { text: string; compact?: boolean }) {
+/** Renders tile text per DESIGN_SPEC §4.2: first line is the heading, "• " lines are bullets. */
+export function TileText({ text }: { text: string }) {
   const [heading, ...rest] = text.split("\n");
   return (
-    <div className={compact ? "text-xs" : "text-sm"}>
-      <div className="font-semibold text-slate-900">{heading}</div>
-      {rest.map((line, i) =>
-        line.startsWith("•") ? (
-          <div key={i} className="flex gap-1.5 pl-1 text-slate-600">
-            <span>•</span>
-            <span>{line.replace(/^•\s*/, "")}</span>
-          </div>
-        ) : (
-          <div key={i} className="text-slate-600">
-            {line}
-          </div>
-        ),
+    <div className="min-w-0">
+      <div className="font-medium">{heading}</div>
+      {rest.length > 0 && (
+        <div className="mt-0.5 text-[13px] text-ink2">
+          {rest.map((line, i) =>
+            line.startsWith("•") ? (
+              <div key={i} className="flex gap-2">
+                <span className="text-muted">–</span>
+                <span>{line.replace(/^•\s*/, "")}</span>
+              </div>
+            ) : (
+              <div key={i}>{line}</div>
+            ),
+          )}
+        </div>
       )}
     </div>
+  );
+}
+
+/** Square icon button for row actions (×). */
+export function IconButton({ className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      {...props}
+      className={`grid h-[26px] w-[26px] flex-none place-items-center border border-transparent text-muted hover:border-line2 hover:text-ink ${className}`}
+    />
   );
 }
 
@@ -106,16 +182,16 @@ export function Modal({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl bg-white shadow-xl ${wide ? "max-w-4xl" : "max-w-2xl"}`}
+        className={`flex max-h-[90vh] w-full flex-col overflow-hidden border border-line2 bg-bg shadow-2xl ${wide ? "max-w-4xl" : "max-w-2xl"}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-          <div className="font-semibold text-slate-900">{title}</div>
-          <button onClick={onClose} className="text-xl leading-none text-slate-400 hover:text-slate-700">
-            ×
-          </button>
+        <div className="flex h-14 flex-none items-center justify-between border-b border-line px-5">
+          <div className="min-w-0 truncate font-medium">{title}</div>
+          <IconButton onClick={onClose} title="Close">
+            ✕
+          </IconButton>
         </div>
         <div className="overflow-y-auto">{children}</div>
       </div>
@@ -125,10 +201,17 @@ export function Modal({
 
 export function ErrorBanner({ error }: { error: string | null }) {
   if (!error) return null;
-  return <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
+  return <div className="border border-danger-line bg-danger-bg px-4 py-3 text-sm text-danger">{error}</div>;
 }
 
 export const formatDate = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+/** "2026-10-02 11:00" for mono table cells. */
+export const formatStamp = (iso: string) => {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));

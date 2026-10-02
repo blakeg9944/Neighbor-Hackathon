@@ -403,6 +403,17 @@ frontend/src/
   - always use `localhost`, not `127.0.0.1`
 - Show the signed-in user's name/avatar and a **Sign out** button in the nav.
 
+
+### 8.5 Visual design
+Mockup: `design/mockups/6-hybrid.html` (kept local, gitignored). Rules for any new UI:
+- **Layout:** left sidebar (New resume, Workspace nav, account) · main column framed by hatched gutters · optional right **Panel** toggled from the top bar (contents TBD). The dashboard lists jobs most-recent-first; there is no "Recent" list in the sidebar.
+- **Lists, not cards:** rows separated by 1px hairlines, mono row numbers (`01`), grouped under `GroupHeader` bands (`EDUCATION · 1`). **Square corners everywhere** (no `rounded-*` except status dots).
+- **Type:** Geist (UI) + Geist Mono (labels, numbers, timestamps). Small uppercase labels use the `label-mono` utility.
+- **Color tokens** (`src/index.css`; use Tailwind classes like `bg-bg text-ink border-line text-accent`, never raw colors). Light is the default; dark is opt-in via the top-bar toggle (`data-theme="dark"`).
+  - Light: bg `#ffffff`, accent `#006494`, solid buttons `#003554`.
+  - Dark: bg `#051923`, accent `#0582CA`.
+- Reuse the building blocks in `src/components/ui.tsx` (`Button`, `Band`, `PageTitle`, `GroupHeader`, `UrlForm`, `IconButton`, `MonoLabel`, `Modal`).
+
 ---
 
 ## 9. Chrome extension (extension guy)

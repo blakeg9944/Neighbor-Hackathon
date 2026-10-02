@@ -11,19 +11,19 @@ export default function PdfModal({
   onClose: () => void;
 }) {
   return (
-    <Modal open={!!pdf} onClose={onClose} wide title={pdf ? `Resume, ${formatDate(pdf.created_at)}` : ""}>
+    <Modal open={!!pdf} onClose={onClose} wide title={pdf ? `Resume · ${formatDate(pdf.created_at)}` : ""}>
       {pdf && (
-        <div className="flex flex-col gap-3 p-4">
-          <iframe src={pdf.url} title="Resume PDF" className="h-[70vh] w-full rounded border border-slate-200" />
-          <div className="flex justify-end">
+        <div className="flex flex-col">
+          <iframe src={pdf.url} title="Resume PDF" className="h-[70vh] w-full border-b border-line bg-panel" />
+          <div className="flex justify-end px-5 py-3">
             <a
               href={pdf.url}
               download={filename}
               target="_blank"
               rel="noreferrer"
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              className="inline-flex h-[34px] items-center border border-accent bg-accent px-3.5 font-medium text-on-accent hover:border-solid hover:bg-solid hover:text-on-solid"
             >
-              Download PDF
+              Download PDF ↓
             </a>
           </div>
         </div>
