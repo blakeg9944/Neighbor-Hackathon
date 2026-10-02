@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { USE_MOCKS } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { usePanel, useTheme } from "../lib/theme";
+import { usePanel } from "../lib/theme";
 import { IconButton, MonoLabel } from "./ui";
 
 const NAV = [
@@ -23,7 +23,6 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 
 export default function Layout() {
   const { user, signOut } = useAuth();
-  const [theme, toggleTheme] = useTheme();
   const [panelOpen, setPanelOpen] = usePanel();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -93,13 +92,6 @@ export default function Layout() {
               ))}
             </nav>
             <div className="ml-auto flex items-center gap-2">
-              <button
-                onClick={toggleTheme}
-                className="flex h-8 items-center gap-1.5 border border-line px-2.5 text-ink2 hover:border-line2 hover:text-ink"
-                title="Toggle light / dark"
-              >
-                {theme === "dark" ? "☀" : "☾"} <MonoLabel className="!text-inherit">{theme === "dark" ? "Light" : "Dark"}</MonoLabel>
-              </button>
               <button
                 onClick={() => setPanelOpen(!panelOpen)}
                 className={`hidden h-8 items-center gap-1.5 border px-2.5 lg:flex ${

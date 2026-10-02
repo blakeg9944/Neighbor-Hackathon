@@ -20,12 +20,6 @@ export const signInWithGoogle = (next = "/") =>
     options: { redirectTo: window.location.origin + next },
   });
 
-export const signInWithPassword = (email: string, password: string) =>
-  supabase.auth.signInWithPassword({ email, password });
-
-export const signUpWithPassword = (email: string, password: string) =>
-  supabase.auth.signUp({ email, password });
-
 export const signOut = () => supabase.auth.signOut();
 
 export class ApiError extends Error {

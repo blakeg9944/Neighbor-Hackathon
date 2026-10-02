@@ -27,7 +27,7 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | Data access | **Everything goes through FastAPI** (`/api/...`). The frontend never queries Supabase tables directly; it uses Supabase only for **auth**. |
 | Schema | **Evolve the existing schema** (the `init` migration + the database guy's `app/db/` layer) instead of replacing it. See §5. |
 | Supabase | One shared **hosted** project. Migrations are pushed with `supabase db push`. |
-| Auth | Google OAuth through Supabase (set up by **James**), plus an **email/password fallback**. Sessions **persist**, so the user stays signed in across visits (§8.4). |
+| Auth | **Google sign-in only**, through Supabase (set up by **James**). No email/password. Sessions **persist**, so the user stays signed in across visits (§8.4). |
 | Extension | Popup with a **"Make a Resume"** button that **opens the website**. The extension makes no API calls and needs no auth of its own; the website authenticates the user before generation. |
 | Job text | Backend fetches the URL. If the fetch fails or returns too little text, the UI asks the user to **paste the description**. |
 | Tailoring | The LLM **selects and orders** existing tiles and does **not rewrite** them. *(Rewriting is a stretch goal.)* |
@@ -343,7 +343,7 @@ def render_resume(profile: dict, sections: dict[str, list[str]]) -> bytes: ...
 ### 8.1 Routes
 | Route | Page | Auth |
 |---|---|---|
-| `/login` | Google button + email/password fallback. After login go to `?next=` (default `/`). | public |
+| `/login` | "Continue with Google" button only. After login go to `?next=` (default `/`). | public |
 | `/` | **Dashboard**: URL input ("Tailor a resume") + grid of job cards | required |
 | `/bank` | **Resume Bank**: upload/paste resume, tile list, add-tile form, profile/contact form | required |
 | `/generate?url=` | **Generate**: if `url` is present, auto-start `POST /api/jobs`; shows progress, the paste fallback, and errors | required |
@@ -409,7 +409,7 @@ Mockup: `design/mockups/6-hybrid.html` (kept local, gitignored). Rules for any n
 - **Layout:** left sidebar (New resume, Workspace nav, account) · main column framed by hatched gutters · optional right **Panel** toggled from the top bar (contents TBD). The dashboard lists jobs most-recent-first; there is no "Recent" list in the sidebar.
 - **Lists, not cards:** rows separated by 1px hairlines, mono row numbers (`01`), grouped under `GroupHeader` bands (`EDUCATION · 1`). **Square corners everywhere** (no `rounded-*` except status dots).
 - **Type:** Geist (UI) + Geist Mono (labels, numbers, timestamps). Small uppercase labels use the `label-mono` utility.
-- **Color tokens** (`src/index.css`; use Tailwind classes like `bg-bg text-ink border-line text-accent`, never raw colors). Light is the default; dark is opt-in via the top-bar toggle (`data-theme="dark"`).
+- **Color tokens** (`src/index.css`; use Tailwind classes like `bg-bg text-ink border-line text-accent`, never raw colors). Light or dark **follows the browser/OS setting** (`prefers-color-scheme`); there is no in-app toggle.
   - Light: bg `#ffffff`, accent `#006494`, solid buttons `#003554`.
   - Dark: bg `#051923`, accent `#0582CA`.
 - Reuse the building blocks in `src/components/ui.tsx` (`Button`, `Band`, `PageTitle`, `GroupHeader`, `UrlForm`, `IconButton`, `MonoLabel`, `Modal`).
@@ -459,7 +459,6 @@ VITE_USE_MOCKS=true
 **Supabase dashboard (James)**
 - Auth, URL Configuration: Site URL `http://localhost:5173`; Redirect URLs `http://localhost:5173/**`
 - Auth, Providers, Google: enable with the client ID and secret from Google Cloud Console (OAuth client type "Web application"; authorized redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`). Consent screen in "Testing" mode, with all teammates + the demo account added as **test users**.
-- Auth, Providers, Email: enabled, "Confirm email" **off** (fallback login).
 - Auth, Sessions: leave time-box/inactivity timeout **off**.
 
 **Backend CORS:** the current `allow_origins=["*"]` is fine for the demo (we send a Bearer header, not cookies).
@@ -541,7 +540,7 @@ Each person owns specific files. **Don't edit another person's files without ask
 | Risk | Mitigation |
 |---|---|
 | Job site blocks fetching (LinkedIn/Indeed) | Paste fallback; demo with Greenhouse/Lever URLs |
-| Google OAuth misconfigured | Email/password fallback; set it up first; add test users |
+| Google OAuth misconfigured | Set it up first and test with every teammate's account; add all test users (incl. the demo account) on the consent screen |
 | LLM returns bad IDs/shape | Structured outputs + backend validation (§6.3 step 4) |
 | Slow LLM calls (10–30 s) | Staged loading UI; job summary reused per URL; saved jobs return instantly |
 | Drag-and-drop complexity | Start from the dnd-kit multi-container sortable example; fallback: "Move to…" dropdown on each tile |

@@ -1,9 +1,8 @@
 @import "tailwindcss";
 
-/* Design tokens (design/mockups/6-hybrid.html). Light is the default; dark is opt-in via
-   <html data-theme="dark">, toggled in the top bar (lib/theme.ts). Corners are square everywhere. */
-:root,
-[data-theme="light"] {
+/* Design tokens (design/mockups/6-hybrid.html). Light or dark follows the user's browser
+   setting (prefers-color-scheme); there is no in-app toggle. Corners are square everywhere. */
+:root {
   --bg: #ffffff;
   --side: #fafafa;
   --panel: #fafafa;
@@ -28,29 +27,31 @@
   color-scheme: light;
 }
 
-[data-theme="dark"] {
-  --bg: #051923;
-  --side: #061d29;
-  --panel: #07202d;
-  --raise: #0a2635;
-  --line: #12303f;
-  --line2: #1d4255;
-  --ink: #e6eef3;
-  --ink2: #9fb3c0;
-  --muted: #6b8696;
-  --hover: #0a2533;
-  --hatch: rgba(255, 255, 255, 0.035);
-  --accent: #0582ca;
-  --accent-bg: rgba(5, 130, 202, 0.12);
-  --accent-line: rgba(5, 130, 202, 0.4);
-  --on-accent: #ffffff;
-  --solid: #e6eef3;
-  --on-solid: #051923;
-  --danger: #f97066;
-  --danger-bg: rgba(249, 112, 102, 0.08);
-  --danger-line: rgba(249, 112, 102, 0.35);
-  --ok: #47cd89;
-  color-scheme: dark;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #051923;
+    --side: #061d29;
+    --panel: #07202d;
+    --raise: #0a2635;
+    --line: #12303f;
+    --line2: #1d4255;
+    --ink: #e6eef3;
+    --ink2: #9fb3c0;
+    --muted: #6b8696;
+    --hover: #0a2533;
+    --hatch: rgba(255, 255, 255, 0.035);
+    --accent: #0582ca;
+    --accent-bg: rgba(5, 130, 202, 0.12);
+    --accent-line: rgba(5, 130, 202, 0.4);
+    --on-accent: #ffffff;
+    --solid: #e6eef3;
+    --on-solid: #051923;
+    --danger: #f97066;
+    --danger-bg: rgba(249, 112, 102, 0.08);
+    --danger-line: rgba(249, 112, 102, 0.35);
+    --ok: #47cd89;
+    color-scheme: dark;
+  }
 }
 
 @theme inline {

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icon48.png" />
@@ -8,12 +8,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <title>Resume Adapter</title>
-    <script>
-      // Apply the saved theme before first paint (light by default). See src/lib/theme.ts.
-      try {
-        if (localStorage.getItem("ra-theme") === "dark") document.documentElement.dataset.theme = "dark";
-      } catch (e) {}
-    </script>
   </head>
   <body>
     <div id="root"></div>

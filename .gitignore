@@ -1,5 +1,8 @@
 .env
 .env.local
+# any env variant (.env.production, .env.development.local, ...) except the committed templates
+.env.*
+!.env.example
 __pycache__/
 *.pyc
 .venv/

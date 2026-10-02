@@ -1,35 +1,31 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
-import { Button, ErrorBanner } from "../components/ui";
+import { Button, ErrorBanner, Spinner } from "../components/ui";
 import { useAuth } from "../lib/auth";
-import { signInWithGoogle, signInWithPassword, signUpWithPassword } from "../lib/supabase";
+import { signInWithGoogle } from "../lib/supabase";
 
 export default function Login() {
   const { user, loading } = useAuth();
   const [params] = useSearchParams();
   const rawNext = params.get("next") ?? "/";
   const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/"; // no open redirects
-
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (loading) return null;
   if (user) return <Navigate to={next} replace />;
 
-  const onEmail = async (e: FormEvent) => {
-    e.preventDefault();
+  // Google is the only sign-in method. On success the browser leaves for Google and comes back to `next`.
+  const onGoogle = async () => {
     setBusy(true);
     setError(null);
-    const { error } = await (mode === "signin" ? signInWithPassword : signUpWithPassword)(email, password);
-    setBusy(false);
-    if (error) setError(error.message);
-    // On success, onAuthStateChange sets the user and the <Navigate> above redirects.
+    const { error } = await signInWithGoogle(next);
+    if (error) {
+      setError(error.message);
+      setBusy(false);
+    }
   };
 
-  const input = "border border-line2 bg-bg px-3 py-2 outline-none placeholder:text-muted focus:border-accent";
   return (
     <div className="hatched flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm border border-line bg-bg">
@@ -37,43 +33,16 @@ export default function Login() {
           <span className="grid h-6 w-6 place-items-center bg-solid font-mono text-xs font-medium text-on-solid">R</span>
           Resume Adapter
         </div>
-        <div className="p-6">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em]">{mode === "signin" ? "Sign in" : "Create account"}</h1>
-          <p className="mt-1 text-ink2">Tailor your resume to any job in seconds.</p>
-
-          <Button className="mt-6 w-full" onClick={() => signInWithGoogle(next)}>
-            <GoogleIcon /> Continue with Google
-          </Button>
-
-          <div className="my-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-line" />
-            <span className="label-mono">or</span>
-            <div className="h-px flex-1 bg-line" />
+        <div className="flex flex-col gap-5 p-6">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-[-0.02em]">Sign in</h1>
+            <p className="mt-1 text-ink2">Tailor your resume to any job in seconds.</p>
           </div>
-
-          <form onSubmit={onEmail} className="flex flex-col gap-3">
-            <input type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
-            <input
-              type="password"
-              required
-              minLength={6}
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={input}
-            />
-            <ErrorBanner error={error} />
-            <Button type="submit" variant="primary" disabled={busy}>
-              {mode === "signin" ? "Sign in" : "Create account"}
-            </Button>
-          </form>
+          <Button className="w-full" disabled={busy} onClick={onGoogle}>
+            {busy ? <Spinner /> : <GoogleIcon />} Continue with Google
+          </Button>
+          <ErrorBanner error={error} />
         </div>
-        <button
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-          className="w-full border-t border-line px-6 py-3 text-left text-ink2 hover:bg-hover hover:text-ink"
-        >
-          {mode === "signin" ? "No account? Create one →" : "Have an account? Sign in →"}
-        </button>
       </div>
     </div>
   );
