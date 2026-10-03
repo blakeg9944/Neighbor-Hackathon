@@ -13,7 +13,7 @@
 Users build a **resume detail bank**: a pool of small "tiles" (one resume entry each) that holds more than fits on one resume. Given a job posting URL, the app picks the relevant tiles, lets the user rearrange them by drag-and-drop, and generates a tailored PDF. A dashboard keeps one card per job with a job summary, the saved layout, and every PDF generated for it.
 
 **Entry points for tailoring**
-1. **Chrome extension:** on a job posting, the user clicks the extension icon. A small popup shows the page and a **"Make a Resume"** button. Clicking it opens `http://localhost:5173/generate?url=<posting url>&source=extension`. If signed out, the website prompts for login and resumes generation afterward.
+1. **Chrome extension:** on a job posting, the user clicks the extension icon. A small popup shows the page and a **"Make a Resume"** button. Clicking it opens `<SITE>/generate?url=<posting url>&source=extension`, where `<SITE>` is `https://trimdcv.com` in production or `http://localhost:5173` in local dev (§3.2). If signed out, the website prompts for login and resumes generation afterward.
 2. **Website:** user pastes a URL into the input on the dashboard or the `/generate` page.
 
 ---
@@ -36,7 +36,7 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 | Dashboard dedupe | One job card per `(user, job url)`. Re-submitting the same URL opens the existing card. |
 | X button | **Review page:** X removes the tile from *this* resume only and moves it to the Unused sidebar. **Bank page:** X **permanently deletes** the tile from the bank. |
 | Resume header | Name, email, phone, location and links come from the **profile** (editable on the Bank page), not from tiles. |
-| Hosting | Demo runs on **localhost**. AWS *(stretch)*. |
+| Hosting | **Live on AWS:** website `https://trimdcv.com` and API `https://api.trimdcv.com` (§3.2). Local dev still uses localhost. |
 | Job matching | **In scope (added):** a **fit score** per job (cosine similarity of the user's whole-bank embedding vs the job's embedding of its **clean summary** (title, company, summary, bullets; not the raw page), via the existing `job_fit`/`match_jobs` RPCs, then rescaled from the raw 0.20–0.55 range onto 0–1 by `job_service.calibrate_fit`) and **recommended jobs** from the global pool. Embeddings use `text-embedding-3-small`. Fit is `null` until both sides are embedded (or with no OpenAI key). |
 | Auto-apply | **In scope (added, §9):** on a real application page, the extension itself (not the website) extracts the form's fields via `chrome.scripting`, sends them to `POST /api/jobs/{id}/autofill` for one LLM field→value mapping, then injects the values back into that same live tab. **Never auto-clicks Submit/Next.** The resume file input can't be auto-filled (browser security restriction on file inputs, no workaround) — a "Download resume" button fetches the right generated PDF to Downloads instead. |
 | Out of scope | RAG / per-tile retrieval. |
@@ -75,6 +75,18 @@ Users build a **resume detail bank**: a pool of small "tiles" (one resume entry 
 
 **Ports**: frontend `http://localhost:5173`, backend `http://localhost:8000` (`python backend/run.py`).
 **Always use `localhost`, never `127.0.0.1`, for the website.** Browsers treat them as different sites, so a login on one isn't visible on the other.
+
+### 3.2 Production (AWS)
+| Piece | Where | Deploys |
+|---|---|---|
+| Website | AWS Amplify, `https://trimdcv.com` (`www.` also served). Build: `amplify.yml`, env `VITE_API_URL=https://api.trimdcv.com`. | Automatically on push to the **`prod`** branch |
+| API | Lightsail (us-west-2): Caddy (HTTPS, `deploy/Caddyfile`) → uvicorn on `127.0.0.1:8000`, 2 workers (systemd `trimdcv-api`, `deploy/trimdcv-api.service`) | `.github/workflows/deploy-backend.yml` on push to **`prod`** touching `backend/**` or `shared/**` |
+| DB/Storage/Auth | Same hosted Supabase project as dev | Migrations stay manual (`supabase db push`); run them **before** releasing code that needs them |
+
+- **Release:** `git push origin main:prod`. Pushing to `main` alone deploys nothing.
+- **Sessions are per origin.** A login on `trimdcv.com` isn't visible on `www.trimdcv.com` or `localhost:5173`. The extension targets `https://trimdcv.com` (no `www`).
+- **Extension target:** `ChromeExtension/config.js` (`CURRENT_ENV = "production"` or `"local"`).
+- **Local rehearsal** of the production setup: see `deploy/README.md`.
 
 ### 3.1 What already exists (as of this spec)
 | Path | Status |
@@ -470,11 +482,11 @@ frontend/src/
 
 ### 8.4 Staying signed in
 - `supabase-js` stores the session in the browser's `localStorage` and **automatically refreshes** the 1-hour access token using the refresh token. Supabase refresh tokens don't expire by default, so a user who signs in once **stays signed in** on that browser until they sign out or clear site data.
-- The extension just opens `http://localhost:5173/...` in the same browser, so it **inherits that session** and the user doesn't log in again.
+- The extension just opens the website (`https://trimdcv.com/...`, or `http://localhost:5173/...` in dev) in the same browser, so it **inherits that session** and the user doesn't log in again.
 - Requirements:
   - keep `persistSession` and `autoRefreshToken` at their defaults (true)
   - don't enable "time-box user sessions" or the inactivity timeout in the Supabase dashboard
-  - always use `localhost`, not `127.0.0.1`
+  - always use `localhost`, not `127.0.0.1`, locally; in production always use `trimdcv.com`, not `www.`
 - Show the signed-in user's name/avatar and a **Sign out** button in the nav.
 
 
@@ -507,7 +519,7 @@ Mockup: `design/mockups/6-hybrid.html` (kept local, gitignored). Rules for any n
 - **Make a Resume** opens `chrome.tabs.create({ url: SITE_URL + "/generate?url=" + encodeURIComponent(tab.url) + "&source=extension" })`, then `window.close()`.
 - **Open dashboard** opens `SITE_URL + "/"`.
 - If the active tab isn't an `http(s)` page (e.g. `chrome://`), disable the button and show "Open a job posting first".
-- `const SITE_URL = "http://localhost:5173";` at the top of `popup.js`.
+- The website and API URLs come from `ChromeExtension/config.js` (`CURRENT_ENV`: `"production"` → `https://trimdcv.com` / `https://api.trimdcv.com`, `"local"` → `http://localhost:5173` / `http://127.0.0.1:8000`).
 - **No `fetch` to the backend** and no auth in the extension for tailoring; the website handles login (§8.4) and calls `/api/url` for extension-originated URLs.
 - `manifest.json`: keep `"action": {"default_popup": "popup.html"}` and `"permissions": ["activeTab"]`; **remove `host_permissions`**; update the description.
 - Load via `chrome://extensions`, then Developer mode, then "Load unpacked", then select `ChromeExtension/`. Click the reload icon there after edits.
@@ -527,14 +539,14 @@ On any other job **application** page (not the posting itself — application UR
 └──────────────────────────────┘
 ```
 This is the **one exception** to "no API calls/no auth" above:
-- **Auth bridge:** a new content script, `authBridge.js`, matches only `http://localhost:5173/*`, reads the Supabase session Supabase-js already writes to that origin's `localStorage` (key `sb-<project-ref>-auth-token`), and copies `access_token`/`expires_at` into `chrome.storage.local` on load plus a ~30s recheck while that tab stays open (catches token auto-refresh). It has no UI and runs only on the website's own origin — nothing is injected into job sites by this script.
+- **Auth bridge:** a new content script, `authBridge.js`, matches only the website's own origins (`http://localhost:5173/*`, `https://trimdcv.com/*`, `https://www.trimdcv.com/*`), reads the Supabase session Supabase-js already writes to that origin's `localStorage` (key `sb-<project-ref>-auth-token`), and copies `access_token`/`expires_at` into `chrome.storage.local` on load plus a ~30s recheck while that tab stays open (catches token auto-refresh). It has no UI and runs only on the website's own origin — nothing is injected into job sites by this script.
 - **Select resume:** popup calls `GET /api/jobs` with the bridged token, pre-selects the closest title/company match to the active tab.
 - **Fill form:** `chrome.scripting.executeScript({allFrames: true})` (triggered by the button click, scoped to the active tab via `activeTab` — no broad host permissions) extracts fields from the live tab (and same-tab iframes, e.g. Greenhouse's embedded form), `POST`s `{fields}` to `/api/jobs/{id}/autofill`, then runs a second `executeScript` injection applying the returned `mapping` directly into that tab.
   - Native `input[type=radio]` groups are extracted as **one field per shared `name`** (`type: "radio"`, `options` = each choice's own label, field label = the fieldset's own question text) — not one disconnected field per radio button, which would lose both the question and the sibling choices (this is how Ashby's own single-select questions are built: a `<fieldset>` of individually-labeled radios, no custom widget at all).
   - **Never clicks a Submit/Next/Continue button or any other page control.** The only things ever clicked are: (a) a native `input[type=checkbox|radio]` the extraction step itself found (standard form controls, never navigation — clicking rather than setting `.checked` directly is what makes this register on React-controlled forms like Ashby's), and (b) elements with ARIA `role="option"` inside a field extraction tagged as `role="listbox"` (custom multi/single-select pickers, e.g. React-Select-style skill/location fields). Native `<select multiple>` is handled by setting `.selected` on the matching `<option>`s instead of clicking anything.
   - A listbox whose options aren't yet rendered (e.g. a closed combobox that lazy-loads them) isn't extracted — known gap, not every custom widget library is covered.
 - **Download resume:** calls `GET /api/jobs/{id}` (existing endpoint, already returns signed PDF URLs) and `chrome.downloads.download(...)` to save the latest PDF straight to Downloads — the mitigation for the one thing that can't be scripted: browsers block any script, including extension content scripts, from setting a `<input type="file">`'s value.
-- New `manifest.json` permissions: `storage`, `scripting`, `downloads` (plus the existing `activeTab`); new `content_scripts: [{matches: ["http://localhost:5173/*"], js: ["authBridge.js"]}]`.
+- New `manifest.json` permissions: `storage`, `scripting`, `downloads` (plus the existing `activeTab`); new `content_scripts: [{matches: ["http://localhost:5173/*", "https://www.trimdcv.com/*", "https://trimdcv.com/*"], js: ["authBridge.js"]}]`.
 - Known limits: only the first page of a multi-page application form is filled; the cached token can go stale if the website tab hasn't been open recently (popup should prompt "sign in again" rather than fail silently).
 
 ---
@@ -556,11 +568,12 @@ VITE_API_URL=http://localhost:8000
 VITE_USE_MOCKS=true
 ```
 **Supabase dashboard (James)**
-- Auth, URL Configuration: Site URL `http://localhost:5173`; Redirect URLs `http://localhost:5173/**`
-- Auth, Providers, Google: enable with the client ID and secret from Google Cloud Console (OAuth client type "Web application"; authorized redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`). Consent screen in "Testing" mode, with all teammates + the demo account added as **test users**.
+- Auth, URL Configuration: Site URL `https://trimdcv.com`; Redirect URLs `https://trimdcv.com/**`, `https://www.trimdcv.com/**`, `http://localhost:5173/**`
+- Auth, Providers, Google: enable with the client ID and secret from Google Cloud Console (OAuth client type "Web application"; authorized redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`). Consent screen is in "Testing" mode, so only listed **test users** can sign in. **Publish it before opening the site to the public.**
 - Auth, Sessions: leave time-box/inactivity timeout **off**.
 
-**Backend CORS:** the current `allow_origins=["*"]` is fine for the demo (we send a Bearer header, not cookies).
+**Production env:** `backend/.env` lives only on the server (mode 600). The Amplify console holds the `VITE_*` values (`VITE_API_URL=https://api.trimdcv.com`, `VITE_USE_MOCKS=false`).
+**Backend CORS:** the current `allow_origins=["*"]` is fine (we send a Bearer header, not cookies).
 **Never commit `.env` files or the service role key.**
 
 ---
@@ -649,4 +662,4 @@ Each person owns specific files. **Don't edit another person's files without ask
 | `localhost` vs `127.0.0.1` session split | Always use `localhost` for the website and in the extension |
 
 ## 15. Stretch goals (only after Checkpoint 2)
-Bullet rewriting tailored to the job · ~~inline tile text edit~~ (done: bank = permanent, review = per-resume) · ~~"Re-run auto-select" button on Review~~ (done) · delete job card · DOCX upload · popup shows "signed in as …" · AWS hosting.
+Bullet rewriting tailored to the job · ~~inline tile text edit~~ (done: bank = permanent, review = per-resume) · ~~"Re-run auto-select" button on Review~~ (done) · delete job card · DOCX upload · popup shows "signed in as …" · ~~AWS hosting~~ (done, §3.2).
